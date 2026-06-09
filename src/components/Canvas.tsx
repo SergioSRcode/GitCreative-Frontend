@@ -1,16 +1,14 @@
 import { useEffect, useRef } from "react";
-
-type PointerPoint = {
-  x: number,
-  y: number,
-  pressure: number,
-  timeStamp: number,
-};
+import type { StrokePoint, Stroke } from "../types/stroke";
+import { resample, smooth } from "../utils/stroke";
+import { StrokeRenderer } from "../rendering/StrokeRenderer";
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGL2RenderingContext | null>(null);
+  const rendererRef = useRef<StrokeRenderer | null>(null);
   const isDrawing = useRef(false); // useRef avoids rerenders of the Canvas component
+  const currentPoints = useRef<StrokePoint[]>([]);
 
   // resizes canvas to actual display size of the device
   function resizeCanvas(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext) {
@@ -25,7 +23,7 @@ export function Canvas() {
     }
   }
 
-  function getPoint(e: React.PointerEvent<HTMLCanvasElement>): PointerPoint {
+  function getPoint(e: React.PointerEvent<HTMLCanvasElement>): StrokePoint {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -39,30 +37,52 @@ export function Canvas() {
     }
   }
 
+  function renderCurrentStroke() {
+    const gl = glRef.current!;
+    const renderer = rendererRef.current!;
+
+    // clear and redraw every frame
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    if (currentPoints.current.length < 2) return;
+
+    const resampled = resample(currentPoints.current, 2);
+    const smoothed = smooth(resampled, 2);
+
+    const stroke: Stroke = {
+      id: 'current',
+      points: smoothed,
+      color: [0.0, 0.0, 0.0],  // black
+      size: 12,
+      opacity: 1.0,
+    }
+
+    renderer.render(stroke);
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     // avoids cutting off the event when the pointer leaves the canvas while drawing
     canvasRef.current!.setPointerCapture(e.pointerId);
     isDrawing.current = true;
 
-    const point = getPoint(e);
-    console.log('Stroke start: ', point);
+    currentPoints.current = [getPoint(e)];
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    // !isDrawing.current makes sure the pointer isn't drawing while hovering
+    // conditional makes sure the pointer isn't drawing while hovering
     if (!isDrawing.current) return; 
 
-    const point = getPoint(e);
-    console.log('Stroke point: ', point);
+    currentPoints.current.push(getPoint(e));
+    renderCurrentStroke();
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!isDrawing.current) return;
 
     isDrawing.current = false;
-
-    const point = getPoint(e);
-    console.log('Stroke end: ', point);
+    currentPoints.current.push(getPoint(e));
+    renderCurrentStroke();
+    currentPoints.current = [];
   }
 
   useEffect(() => {
@@ -76,11 +96,16 @@ export function Canvas() {
     }
 
     glRef.current = gl;
+    rendererRef.current = new StrokeRenderer(gl);
 
     // resizes canvas and clears it to a white background
     resizeCanvas(canvas, gl);
     gl.clearColor(1.0, 1.0, 1.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Enables alpha blending so opacity works correctly
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     // resizes with each window change
     function handleResize() {
@@ -91,9 +116,7 @@ export function Canvas() {
     window.addEventListener('resize', handleResize);
 
     // listener cleanup on unmount
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    }
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   return (
