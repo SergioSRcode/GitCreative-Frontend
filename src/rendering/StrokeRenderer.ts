@@ -84,23 +84,34 @@ export class StrokeRenderer {
     this.colorLoc      = gl.getUniformLocation(this.program, 'u_color')!;
   }
 
-  render(stroke: Stroke) {
+  render(
+    stroke: Stroke, 
+    targetFramebuffer: WebGLFramebuffer | null, 
+    width: number, 
+    height: number 
+  ) {
     const { gl } = this;
     const verts = buildQuadVertices(stroke.points, stroke.size);
     if (verts.length === 0) return
 
+    // binds the target:
+    //    - a framebuffer object => renders into a layer's texture
+    //    - null => renders to the visible scrren
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+
     gl.useProgram(this.program);
 
-    // Upload vertex data to the GPU
+    // Uploads vertex data to the GPU
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
 
-    // Tell WebGL how to read the buffer — 2 floats per vertex, no offset
+    // Tells WebGL how to read the buffer — 2 floats per vertex, no offset
     gl.enableVertexAttribArray(this.positionLoc);
     gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
 
     // Pass uniforms
-    gl.uniform2f(this.resolutionLoc, gl.canvas.width, gl.canvas.height);
+    gl.uniform2f(this.resolutionLoc, width, height);
     gl.uniform4f(this.colorLoc, ...stroke.color, stroke.opacity);
 
     // Draw
