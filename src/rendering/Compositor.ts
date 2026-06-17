@@ -56,12 +56,11 @@ export class Compositor {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
-    // Matching UV coordinates — Y is flipped because
-    // texture row 0 is the TOP of the image but UV (0,0) is conventionally
-    // the BOTTOM-left in OpenGL's texture convention
+    // Matching UV coordinates — no flip needed since our layer textures
+    // already use the same top-left origin as our stroke rendering
     const texCoords = new Float32Array([
-      0, 1,   1, 1,   0, 0,
-      0, 0,   1, 1,   1, 0,
+      0, 0,   1, 0,   0, 1,
+      0, 1,   1, 0,   1, 1,
     ]);
 
     this.texCoordBuffer = gl.createBuffer()!;
