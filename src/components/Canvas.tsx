@@ -1,19 +1,30 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StrokePoint, Stroke } from "../types/stroke";
 import type { Layer } from "../types/layer";
+import type { Brush, BrushType } from "../types/brush";
 import { resample, smooth } from "../utils/stroke";
-import { StrokeRenderer } from "../rendering/StrokeRenderer";
+// import { StrokeRenderer } from "../rendering/StrokeRenderer";
+import { BrushRenderer } from "../rendering/BrushRenderer";
 import { Compositor } from "../rendering/Compositor";
 import { createLayer } from "../rendering/createLayer";
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGL2RenderingContext | null>(null);
-  const rendererRef = useRef<StrokeRenderer | null>(null);
+  const rendererRef = useRef<BrushRenderer | null>(null);
   const compositorRef = useRef<Compositor | null>(null);
   const layersRef = useRef<Layer[]>([]);
   const isDrawing = useRef(false); // useRef avoids rerenders of the Canvas component
   const currentPoints = useRef<StrokePoint[]>([]);
+
+  const [brushType, setBrushType] = useState<BrushType>('ink');
+
+  const brush: Brush = {
+    type: brushType,
+    size: brushType === 'pencil' ? 18 : brushType === 'eraser' ? 40 : 10,
+    opacity: 1.0,
+    color: [0.0, 0.0, 0.0],
+  };
 
   // resizes canvas to actual display size of the device
   function resizeCanvas(canvas: HTMLCanvasElement) {
@@ -51,10 +62,10 @@ export function Canvas() {
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(1, 1, 1, 1);  // white page background
     gl.clear(gl.COLOR_BUFFER_BIT);
-
     // Enables blending so transparent layer areas show what's beneath
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     for (const layer of layersRef.current) {
       if (!layer.visible) continue;
@@ -70,18 +81,20 @@ export function Canvas() {
 
     if (currentPoints.current.length < 2) return;
 
-    const resampled = resample(currentPoints.current, 2);
-    const smoothed = smooth(resampled, 2);
+    // Spacing scales with brush size — denser dabs for smaller brushes
+    const spacing = Math.max(brush.size * 0.15, 1);
+    const resampled = resample(currentPoints.current, spacing);
+    const smoothed = smooth(resampled, 1);
 
     const stroke: Stroke = {
       id: 'current',
       points: smoothed,
-      color: [0.0, 0.0, 0.0],  // black
-      size: 12,
-      opacity: 1.0,
+      color: brush.color,
+      size: brush.size,
+      opacity: brush.opacity,
     }
 
-    renderer.render(stroke, activeLayer.framebuffer, gl.canvas.width, gl.canvas.height);
+    renderer.render(stroke, brush, activeLayer.framebuffer, gl.canvas.width, gl.canvas.height);
     compositeToScreen();
   }
 
@@ -124,7 +137,7 @@ export function Canvas() {
     glRef.current = gl;
     resizeCanvas(canvas);
 
-    rendererRef.current = new StrokeRenderer(gl);
+    rendererRef.current = new BrushRenderer(gl);
     compositorRef.current = new Compositor(gl);
     layersRef.current = [createLayer(gl, canvas.width, canvas.height, 'Layer 1')];
 
@@ -143,14 +156,20 @@ export function Canvas() {
   }, []);
 
   return (
-    <canvas 
-      ref={canvasRef}
-      style={{ display: 'block', width: '100vw', height: '100vh', touchAction: 'none'}}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      // avoids edge cases where the pointer might exit the canvas without triggering onPointerUp
-      onPointerLeave={onPointerUp}
-    />
+    <>
+      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1, display: 'flex', gap: 8 }}>
+        <button onClick={() => setBrushType('pencil')}>Pencil</button>
+        <button onClick={() => setBrushType('ink')}>Ink</button>
+        <button onClick={() => setBrushType('eraser')}>Eraser</button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        style={{ display: 'block', width: '100vw', height: '100vh', touchAction: 'none' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      />
+    </>
   )
 }
