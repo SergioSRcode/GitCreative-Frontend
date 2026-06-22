@@ -2,11 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import type { StrokePoint, Stroke } from "../types/stroke";
 import type { Layer } from "../types/layer";
 import type { Brush, BrushType } from "../types/brush";
+import type { HSVColor, RGBColor } from "../types/color";
+import { hsvToRgb, rgbToHsv, rgbToHex } from "../utils/color";
 import { resample, smooth } from "../utils/stroke";
-// import { StrokeRenderer } from "../rendering/StrokeRenderer";
 import { BrushRenderer } from "../rendering/BrushRenderer";
 import { Compositor } from "../rendering/Compositor";
 import { createLayer } from "../rendering/createLayer";
+import { sampleColorFromLayer } from "../utils/eyedropper";
+import { ColorPicker } from "./ColorPicker";
+import { RecentColors } from "./RecentColors";
+// import { StrokeRenderer } from "../rendering/StrokeRenderer";
+
+const MAX_RECENT = 10;
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,12 +25,17 @@ export function Canvas() {
   const currentPoints = useRef<StrokePoint[]>([]);
 
   const [brushType, setBrushType] = useState<BrushType>('ink');
+  const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
+  const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
+  const [eyedropper, setEyedropper] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
+  const rgb = hsvToRgb(hsvColor);
   const brush: Brush = {
     type: brushType,
     size: brushType === 'pencil' ? 18 : brushType === 'eraser' ? 40 : 10,
     opacity: 1.0,
-    color: [0.0, 0.0, 0.0],
+    color: [rgb.r, rgb.g, rgb.b],
   };
 
   // resizes canvas to actual display size of the device
@@ -35,7 +47,6 @@ export function Canvas() {
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
       canvas.width = displayWidth;
       canvas.height = displayHeight;
-      // gl.viewport(0, 0, displayWidth, displayHeight);
     }
   }
 
@@ -64,7 +75,6 @@ export function Canvas() {
     gl.clear(gl.COLOR_BUFFER_BIT);
     // Enables blending so transparent layer areas show what's beneath
     gl.enable(gl.BLEND);
-
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     for (const layer of layersRef.current) {
@@ -98,12 +108,41 @@ export function Canvas() {
     compositeToScreen();
   }
 
+  // adds current color to recents, avoids duplicates
+  function pushRecentColor(color: RGBColor) {
+    const hex = rgbToHex(color);
+
+    setRecentColors(prev => {
+      const filtered = prev.filter(c => rgbToHex(c) !== hex);
+      return [color, ...filtered].slice(0, MAX_RECENT);
+    });
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    // Eyedropper mode - takes a sample on click instead of drawing
+    if (eyedropper) {
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+      const point = getPoint(e);
+      const sampled = sampleColorFromLayer(
+        gl,
+        layersRef.current[0],
+        point.x,
+        point.y,
+        canvas.height
+      );
+
+      setHsvColor(rgbToHsv(sampled));
+      setEyedropper(false);
+
+      return;
+    }
+
     // avoids cutting off the event when the pointer leaves the canvas while drawing
     canvasRef.current!.setPointerCapture(e.pointerId);
     isDrawing.current = true;
-
     currentPoints.current = [getPoint(e)];
+    pushRecentColor(rgb);
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -135,12 +174,11 @@ export function Canvas() {
     }
 
     glRef.current = gl;
-    resizeCanvas(canvas);
-
     rendererRef.current = new BrushRenderer(gl);
     compositorRef.current = new Compositor(gl);
     layersRef.current = [createLayer(gl, canvas.width, canvas.height, 'Layer 1')];
 
+    resizeCanvas(canvas);
     compositeToScreen();
 
     // resizes with each window change
@@ -155,21 +193,92 @@ export function Canvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const currentHex = rgbToHex(rgb);
+
   return (
     <>
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1, display: 'flex', gap: 8 }}>
-        <button onClick={() => setBrushType('pencil')}>Pencil</button>
-        <button onClick={() => setBrushType('ink')}>Ink</button>
-        <button onClick={() => setBrushType('eraser')}>Eraser</button>
+      {/* Toolbar */}
+      <div style={{
+        position: 'absolute', top: 10, left: 10, zIndex: 10,
+        background: 'white', border: '1px solid #ddd',
+        borderRadius: 10, padding: 12,
+        display: 'flex', flexDirection: 'column', gap: 10,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+        width: 244,
+      }}>
+
+        {/* Brush selector */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['pencil', 'ink', 'eraser'] as BrushType[]).map(type => (
+            <button
+              key={type}
+              onClick={() => { setBrushType(type); setEyedropper(false) }}
+              style={{
+                flex: 1, padding: '4px 0', borderRadius: 6, border: '1px solid #ddd',
+                background: brushType === type && !eyedropper ? '#f0f0f0' : 'white',
+                fontWeight: brushType === type && !eyedropper ? 600 : 400,
+                cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+
+        {/* Color swatch + eyedropper toggle */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div
+            onClick={() => setShowPicker(p => !p)}
+            title="Pick color"
+            style={{
+              width: 32, height: 32, borderRadius: 6,
+              background: currentHex,
+              border: '1px solid rgba(0,0,0,0.15)',
+              cursor: 'pointer', flexShrink: 0,
+            }}
+          />
+          <button
+            onClick={() => setEyedropper(e => !e)}
+            title="Eyedropper"
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: eyedropper ? '#f0f0f0' : 'white',
+              cursor: 'pointer', fontSize: 13,
+            }}
+          >
+            eyedropper
+          </button>
+          <span style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>
+            {currentHex}
+          </span>
+        </div>
+
+        {/* Inline color picker — shown/hidden by clicking the swatch */}
+        {showPicker && (
+          <>
+            <ColorPicker color={hsvColor} onChange={setHsvColor} />
+            <RecentColors
+              colors={recentColors}
+              onSelect={c => setHsvColor(rgbToHsv(c))}
+            />
+          </>
+        )}
       </div>
+
+      {/* Canvas cursor hint when eyedropper is active */}
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', width: '100vw', height: '100vh', touchAction: 'none' }}
+        style={{
+          display: 'block', width: '100vw', height: '100vh',
+          touchAction: 'none',
+          cursor: eyedropper ? 'crosshair' : 'default',
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
       />
     </>
-  )
+  );
 }
