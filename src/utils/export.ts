@@ -1,6 +1,6 @@
 import type { Layer } from "../types/layer";
 
-type ExportFormat = 'png' | 'jpeg';
+export type ExportFormat = 'png' | 'jpeg';
 
 export async function exportCanvas(
   gl: WebGL2RenderingContext,

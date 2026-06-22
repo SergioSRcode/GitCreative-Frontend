@@ -11,6 +11,8 @@ import { createLayer } from "../rendering/createLayer";
 import { sampleColorFromLayer } from "../utils/eyedropper";
 import { ColorPicker } from "./ColorPicker";
 import { RecentColors } from "./RecentColors";
+import type { ExportFormat } from "../utils/export";
+import { exportCanvas } from "../utils/export";
 // import { StrokeRenderer } from "../rendering/StrokeRenderer";
 
 const MAX_RECENT = 10;
@@ -165,6 +167,20 @@ export function Canvas() {
     currentPoints.current = [];
   }
 
+  async function handleExport(format: ExportFormat) {
+    const gl = glRef.current!;
+    const canvas = canvasRef.current!;
+
+    await exportCanvas(
+      gl,
+      layersRef.current,
+      canvas.width,
+      canvas.height,
+      format,
+      'my-painting'
+    );
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     const gl = canvas.getContext('webgl2');
@@ -264,6 +280,30 @@ export function Canvas() {
             />
           </>
         )}
+      </div>
+
+      {/* Export */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          onClick={() => handleExport('png')}
+          style={{
+            flex: 1, padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+          }}
+        >
+          export PNG
+        </button>
+        <button
+          onClick={() => handleExport('jpeg')}
+          style={{
+            flex: 1, padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+          }}
+        >
+          export JPEG
+        </button>
       </div>
 
       {/* Canvas cursor hint when eyedropper is active */}
