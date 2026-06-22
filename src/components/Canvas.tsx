@@ -14,7 +14,7 @@ import { ColorPicker } from './ColorPicker';
 import { RecentColors } from './RecentColors';
 import { LayerPanel } from './LayerPanel';
 
-const MAX_RECENT = 10
+const MAX_RECENT = 10;
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
