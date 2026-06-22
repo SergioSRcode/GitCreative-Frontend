@@ -1,4 +1,4 @@
-import type { Layer } from '../types/layer';
+import type { Layer, BlendMode } from '../types/layer';
 
 export function createLayer(
   gl: WebGL2RenderingContext,
@@ -58,6 +58,7 @@ export function createLayer(
     name,
     visible: true,
     opacity: 1.0,
+    blendMode: 'normal' as BlendMode,
     texture,
     framebuffer,
   };
