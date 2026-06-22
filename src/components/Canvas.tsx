@@ -1,29 +1,27 @@
-import { useEffect, useRef, useState } from "react";
-import type { StrokePoint, Stroke } from "../types/stroke";
-import type { Layer } from "../types/layer";
-import type { Brush, BrushType } from "../types/brush";
-import type { HSVColor, RGBColor } from "../types/color";
-import { hsvToRgb, rgbToHsv, rgbToHex } from "../utils/color";
-import { resample, smooth } from "../utils/stroke";
-import { BrushRenderer } from "../rendering/BrushRenderer";
-import { Compositor } from "../rendering/Compositor";
-import { createLayer } from "../rendering/createLayer";
-import { sampleColorFromLayer } from "../utils/eyedropper";
-import { ColorPicker } from "./ColorPicker";
-import { RecentColors } from "./RecentColors";
-import type { ExportFormat } from "../utils/export";
-import { exportCanvas } from "../utils/export";
-// import { StrokeRenderer } from "../rendering/StrokeRenderer";
+import { useEffect, useRef, useState } from 'react';
+import type { StrokePoint, Stroke } from '../types/stroke';
+import type { Brush, BrushType } from '../types/brush';
+import type { HSVColor, RGBColor } from '../types/color';
+import { hsvToRgb, rgbToHsv, rgbToHex } from '../utils/color';
+import { resample, smooth } from '../utils/stroke';
+import { BrushRenderer } from '../rendering/BrushRenderer';
+import { Compositor } from '../rendering/Compositor';
+import { sampleColorFromLayer } from '../utils/eyedropper';
+import { exportCanvas } from '../utils/export';
+import type { ExportFormat } from '../utils/export';
+import { useLayers } from '../hooks/useLayers';
+import { ColorPicker } from './ColorPicker';
+import { RecentColors } from './RecentColors';
+import { LayerPanel } from './LayerPanel';
 
-const MAX_RECENT = 10;
+const MAX_RECENT = 10
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGL2RenderingContext | null>(null);
   const rendererRef = useRef<BrushRenderer | null>(null);
   const compositorRef = useRef<Compositor | null>(null);
-  const layersRef = useRef<Layer[]>([]);
-  const isDrawing = useRef(false); // useRef avoids rerenders of the Canvas component
+  const isDrawing = useRef(false);
   const currentPoints = useRef<StrokePoint[]>([]);
 
   const [brushType, setBrushType] = useState<BrushType>('ink');
@@ -32,15 +30,20 @@ export function Canvas() {
   const [eyedropper, setEyedropper] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
 
-  const rgb = hsvToRgb(hsvColor);
+  const {
+    layers, activeLayer, activeLayerId, setActiveLayerId,
+    init, addLayer, deleteLayer, moveLayer,
+    setVisibility, setOpacity, setBlendMode, renameLayer,
+  } = useLayers();
+
+  const rgb: RGBColor = hsvToRgb(hsvColor);
   const brush: Brush = {
-    type: brushType,
-    size: brushType === 'pencil' ? 18 : brushType === 'eraser' ? 40 : 10,
+    type:    brushType,
+    size:    brushType === 'pencil' ? 18 : brushType === 'eraser' ? 40 : 10,
     opacity: 1.0,
-    color: [rgb.r, rgb.g, rgb.b],
+    color:   [rgb.r, rgb.g, rgb.b],
   };
 
-  // resizes canvas to actual display size of the device
   function resizeCanvas(canvas: HTMLCanvasElement) {
     const dpr = window.devicePixelRatio || 1;
     const displayWidth = Math.round(canvas.clientWidth * dpr);
@@ -58,45 +61,41 @@ export function Canvas() {
     const dpr = window.devicePixelRatio || 1;
 
     return {
-      x: (e.clientX - rect.left) * dpr,
-      y: (e.clientY - rect.top) * dpr,
-      // Mice report 0.5, styluses report 0–1
-      pressure: e.pressure > 0 ? e.pressure : 0.5,
+      x:         (e.clientX - rect.left) * dpr,
+      y:         (e.clientY - rect.top)  * dpr,
+      pressure:  e.pressure > 0 ? e.pressure : 0.5,
       timeStamp: e.timeStamp,
-    }
+    };
   }
 
-  // composites all layers onto the visible screen
   function compositeToScreen() {
     const gl = glRef.current!;
     const canvas = canvasRef.current!;
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)  // null = the screen
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(1, 1, 1, 1);  // white page background
+    gl.clearColor(1, 1, 1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    // Enables blending so transparent layer areas show what's beneath
     gl.enable(gl.BLEND);
-    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
+    );
 
-    for (const layer of layersRef.current) {
+    for (const layer of layers) {
       if (!layer.visible) continue;
-      compositorRef.current!.drawLayer(layer);
+      compositorRef.current!.drawLayer(layer, canvas.width, canvas.height);
     }
   }
 
-  // render the in-progress stroke into the active layer's texture
   function renderCurrentStrokeToLayer() {
     const gl = glRef.current!;
-    const renderer = rendererRef.current!;
-    const activeLayer = layersRef.current[0];  // single layer for now
-
+    if (!activeLayer) return;
     if (currentPoints.current.length < 2) return;
 
-    // Spacing scales with brush size — denser dabs for smaller brushes
-    const spacing = Math.max(brush.size * 0.15, 1);
+    const spacing   = Math.max(brush.size * 0.15, 1);
     const resampled = resample(currentPoints.current, spacing);
-    const smoothed = smooth(resampled, 1);
+    const smoothed  = smooth(resampled, 1);
 
     const stroke: Stroke = {
       id: 'current',
@@ -104,13 +103,17 @@ export function Canvas() {
       color: brush.color,
       size: brush.size,
       opacity: brush.opacity,
-    }
+    };
 
-    renderer.render(stroke, brush, activeLayer.framebuffer, gl.canvas.width, gl.canvas.height);
+    rendererRef.current!.render(
+      stroke, brush,
+      activeLayer.framebuffer,
+      gl.canvas.width, gl.canvas.height
+    );
+
     compositeToScreen();
   }
 
-  // adds current color to recents, avoids duplicates
   function pushRecentColor(color: RGBColor) {
     const hex = rgbToHex(color);
 
@@ -121,17 +124,12 @@ export function Canvas() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    // Eyedropper mode - takes a sample on click instead of drawing
     if (eyedropper) {
-      const gl = glRef.current!;
+      const gl     = glRef.current!;
       const canvas = canvasRef.current!;
-      const point = getPoint(e);
+      const point  = getPoint(e);
       const sampled = sampleColorFromLayer(
-        gl,
-        layersRef.current[0],
-        point.x,
-        point.y,
-        canvas.height
+        gl, layers[0], point.x, point.y, canvas.height
       );
 
       setHsvColor(rgbToHsv(sampled));
@@ -140,22 +138,19 @@ export function Canvas() {
       return;
     }
 
-    // avoids cutting off the event when the pointer leaves the canvas while drawing
     canvasRef.current!.setPointerCapture(e.pointerId);
-    isDrawing.current = true;
+    isDrawing.current     = true;
     currentPoints.current = [getPoint(e)];
+
     pushRecentColor(rgb);
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    // conditional makes sure the pointer isn't drawing while hovering
-    if (!isDrawing.current) return; 
+    if (!isDrawing.current) return;
 
     currentPoints.current.push(getPoint(e));
     renderCurrentStrokeToLayer();
-
-    // keeps last point as the new segment start
-    currentPoints.current = currentPoints.current.slice(-1); 
+    currentPoints.current = currentPoints.current.slice(-1);
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -170,44 +165,34 @@ export function Canvas() {
   async function handleExport(format: ExportFormat) {
     const gl = glRef.current!;
     const canvas = canvasRef.current!;
-
-    await exportCanvas(
-      gl,
-      layersRef.current,
-      canvas.width,
-      canvas.height,
-      format,
-      'my-painting'
-    );
+    await exportCanvas(gl, layers, canvas.width, canvas.height, format, 'my-painting');
   }
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const gl = canvas.getContext('webgl2');
-    if (!gl) {
-      console.error('WebGL2 not supported by the browser');
-      return;
-    }
+    if (!gl) { console.error('WebGL2 not supported'); return };
 
     glRef.current = gl;
     rendererRef.current = new BrushRenderer(gl);
     compositorRef.current = new Compositor(gl);
-    layersRef.current = [createLayer(gl, canvas.width, canvas.height, 'Layer 1')];
 
     resizeCanvas(canvas);
-    compositeToScreen();
+    init(gl, canvas.width, canvas.height);
 
-    // resizes with each window change
     function handleResize() {
       resizeCanvas(canvas);
       compositeToScreen();
     }
 
     window.addEventListener('resize', handleResize);
-
-    // listener cleanup on unmount
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Re-composite whenever layer state changes (visibility, opacity, order, blend mode)
+  useEffect(() => {
+    if (glRef.current && compositorRef.current) compositeToScreen();
+  }, [layers]);
 
   const currentHex = rgbToHex(rgb);
 
@@ -222,7 +207,6 @@ export function Canvas() {
         boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         width: 244,
       }}>
-
         {/* Brush selector */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['pencil', 'ink', 'eraser'] as BrushType[]).map(type => (
@@ -230,18 +214,17 @@ export function Canvas() {
               key={type}
               onClick={() => { setBrushType(type); setEyedropper(false) }}
               style={{
-                flex: 1, padding: '4px 0', borderRadius: 6, border: '1px solid #ddd',
+                flex: 1, padding: '4px 0', borderRadius: 6,
+                border: '1px solid #ddd',
                 background: brushType === type && !eyedropper ? '#f0f0f0' : 'white',
                 fontWeight: brushType === type && !eyedropper ? 600 : 400,
                 cursor: 'pointer', fontSize: 13,
               }}
-            >
-              {type}
-            </button>
+            >{type}</button>
           ))}
         </div>
 
-        {/* Color swatch + eyedropper toggle */}
+        {/* Color swatch + eyedropper */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div
             onClick={() => setShowPicker(p => !p)}
@@ -255,22 +238,19 @@ export function Canvas() {
           />
           <button
             onClick={() => setEyedropper(e => !e)}
-            title="Eyedropper"
             style={{
               padding: '4px 10px', borderRadius: 6,
               border: '1px solid #ddd',
               background: eyedropper ? '#f0f0f0' : 'white',
               cursor: 'pointer', fontSize: 13,
             }}
-          >
-            eyedropper
-          </button>
+          >eyedropper</button>
           <span style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>
             {currentHex}
           </span>
         </div>
 
-        {/* Inline color picker — shown/hidden by clicking the swatch */}
+        {/* Color picker */}
         {showPicker && (
           <>
             <ColorPicker color={hsvColor} onChange={setHsvColor} />
@@ -280,33 +260,39 @@ export function Canvas() {
             />
           </>
         )}
+
+        {/* Export */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['png', 'jpeg'] as ExportFormat[]).map(fmt => (
+            <button
+              key={fmt}
+              onClick={() => handleExport(fmt)}
+              style={{
+                flex: 1, padding: '4px 0', borderRadius: 6,
+                border: '1px solid #ddd', background: 'white',
+                cursor: 'pointer', fontSize: 13,
+              }}
+            >export {fmt.toUpperCase()}</button>
+          ))}
+        </div>
       </div>
 
-      {/* Export */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          onClick={() => handleExport('png')}
-          style={{
-            flex: 1, padding: '4px 0', borderRadius: 6,
-            border: '1px solid #ddd', background: 'white',
-            cursor: 'pointer', fontSize: 13,
-          }}
-        >
-          export PNG
-        </button>
-        <button
-          onClick={() => handleExport('jpeg')}
-          style={{
-            flex: 1, padding: '4px 0', borderRadius: 6,
-            border: '1px solid #ddd', background: 'white',
-            cursor: 'pointer', fontSize: 13,
-          }}
-        >
-          export JPEG
-        </button>
-      </div>
+      {/* Layer panel */}
+      <LayerPanel
+        layers={layers}
+        activeLayerId={activeLayerId}
+        onSelect={setActiveLayerId}
+        onAdd={addLayer}
+        onDelete={deleteLayer}
+        onMoveUp={id => moveLayer(id, 'up')}
+        onMoveDown={id => moveLayer(id, 'down')}
+        onVisibility={setVisibility}
+        onOpacity={setOpacity}
+        onBlendMode={setBlendMode}
+        onRename={renameLayer}
+      />
 
-      {/* Canvas cursor hint when eyedropper is active */}
+      {/* Canvas */}
       <canvas
         ref={canvasRef}
         style={{
@@ -320,5 +306,5 @@ export function Canvas() {
         onPointerLeave={onPointerUp}
       />
     </>
-  );
+  )
 }

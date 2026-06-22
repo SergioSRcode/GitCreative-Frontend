@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { Layer, BlendMode } from "../types/layer";
 import { createLayer } from "../rendering/createLayer";
 
-export function useLayers(gl: WebGL2RenderingContext | null) {
+export function useLayers() {
+  const glRef = useRef<WebGL2RenderingContext | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
 
   const activeLayer = layers.find(layer => layer.id === activeLayerId) ?? layers[0] ?? null;
 
-  function init(width: number, height: number) {
-    if (!gl) return;
+  function init(gl: WebGL2RenderingContext, width: number, height: number) {
+    glRef.current = gl;
 
     const first = createLayer(gl, width, height, 'Layer 1');
     setLayers([first]);
@@ -17,6 +18,7 @@ export function useLayers(gl: WebGL2RenderingContext | null) {
   }
 
   function addLayer() {
+    const gl = glRef.current;
     if (!gl) return;
 
     const canvas = gl.canvas as HTMLCanvasElement;
