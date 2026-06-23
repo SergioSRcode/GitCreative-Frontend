@@ -207,9 +207,33 @@ export function Canvas() {
       compositeToScreen();
     }
 
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      if (cmdOrCtrl && e.key === 'z') {
+        e.preventDefault();
+
+        if (e.shiftKey) {
+          // cmd+Shift+z => redo
+          const gl = glRef.current!;
+          if (redo(gl, layers)) compositeToScreen();
+        } else {
+          // cmd+z => undo
+          const gl = glRef.current!;
+          if (undo(gl, layers)) compositeToScreen();
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+    }
+  }, [layers]);  // [layers] is important so undo/redo can receive layers to work with
 
   // Re-composite whenever layer state changes (visibility, opacity, order, blend mode)
   useEffect(() => {
