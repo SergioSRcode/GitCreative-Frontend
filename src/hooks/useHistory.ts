@@ -1,0 +1,115 @@
+import { useRef } from "react";
+import type { Layer } from "../types/layer";
+
+// captures the full pixel data of each layer at one point in time
+export type Snapshot = {
+  layers: {
+    id: string,
+    pixels: Uint8Array,
+    width: number,
+    height: number,
+  }[]
+};
+
+const MAX_HISTORY = 50;  // max undo steps
+
+export function useHistory() {
+  // useRef over useState:
+  // both stacks live in refs => they are never used for rendering, thus making useState unnecessary
+  const undoStack = useRef<Snapshot[]>([]);
+  const redoStack = useRef<Snapshot[]>([]);
+
+  function captureSnapshot(
+    gl: WebGL2RenderingContext,
+    layers: Layer[]
+  ): Snapshot {
+    return {
+      layers: layers.map(layer => {
+        const { width, height } = gl.canvas as HTMLCanvasElement;
+        const pixels = new Uint8Array(width * height * 4);
+
+        // binds layers framebuffer so readPixels can read from texture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        return { id: layer.id, pixels, width, height };
+      }),
+    }
+  }
+
+  // restores snapshot into layer textures
+  function restoreSnapshot(
+    gl: WebGL2RenderingContext,
+    layers: Layer[],
+    snapshot: Snapshot
+  ) {
+    for (const saved of snapshot.layers) {
+      const layer = layers.find(layer => layer.id === saved.id);
+      if (!layer) continue;
+
+      // texSubImage2D writes into textures directly => no framebuffer needed.
+      gl.bindTexture(gl.TEXTURE_2D, layer.texture);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,  // mip level
+        0, 0,  // x, y offset => 0, 0 = overwrite from the top-left
+        saved.width,
+        saved.height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        saved.pixels,
+      );
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+  }
+
+  // pushes new snapshot onto the undo stack
+  // is called after each completed stroke
+  function pushSnapshot(gl: WebGL2RenderingContext, layers: Layer[]) {
+    const snapshot = captureSnapshot(gl, layers);
+    undoStack.current.push(snapshot);
+
+    // Trims to keep memory usage bounded
+    if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift(); // removes oldest entry
+
+    // resets redo because last move was a stroke (doesn't reset after 'undo')
+    redoStack.current = [];
+  }
+
+  function undo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
+    if (undoStack.current.length === 0) return false;
+
+    // saves current state to redo stack before restoring prev capture
+    const current = captureSnapshot(gl, layers);
+    redoStack.current.push(current);
+
+    const previous = undoStack.current.pop()!;
+    restoreSnapshot(gl, layers, previous);
+
+    return true;
+  }
+
+  function redo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
+    if (redoStack.current.length === 0) return false;
+
+    // saves current state to undo stack before restoring capture
+    const current = captureSnapshot(gl, layers);
+    undoStack.current.push(current);
+
+    const next = redoStack.current.pop()!;
+    restoreSnapshot(gl, layers, next);
+
+    return true;
+  }
+
+  function canUndo() { 
+    return undoStack.current.length > 0;
+  }
+
+  function canRedo() {
+    return redoStack.current.length > 0;
+  }
+
+  return { pushSnapshot, undo, redo, canUndo, canRedo };
+}
