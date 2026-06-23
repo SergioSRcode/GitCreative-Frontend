@@ -9,12 +9,20 @@ export function useLayers() {
 
   const activeLayer = layers.find(layer => layer.id === activeLayerId) ?? layers[0] ?? null;
 
-  function init(gl: WebGL2RenderingContext, width: number, height: number) {
+  function init(
+    gl: WebGL2RenderingContext, 
+    width: number, 
+    height: number,
+    onReady: (gl: WebGL2RenderingContext, layers: Layer[]) => void  // = pushSnapshot from useHistory
+  ) {
     glRef.current = gl;
 
     const first = createLayer(gl, width, height, 'Layer 1');
-    setLayers([first]);
+    const initial = [first];
+    setLayers(initial);
     setActiveLayerId(first.id);
+    // notifies Canvas.tsx that layers are ready, so initial snapshot can be pushed (important for undo/redo)
+    onReady(gl, initial);
   }
 
   function addLayer() {
