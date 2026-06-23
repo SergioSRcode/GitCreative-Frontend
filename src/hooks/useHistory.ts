@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState, useRef } from "react";
 import type { Layer } from "../types/layer";
 
 // captures the full pixel data of each layer at one point in time
@@ -18,6 +18,10 @@ export function useHistory() {
   // both stacks live in refs => they are never used for rendering, thus making useState unnecessary
   const undoStack = useRef<Snapshot[]>([]);
   const redoStack = useRef<Snapshot[]>([]);
+
+  // states only pupose is to trigger re-renders (for undo/redo to be in sync)
+  const [, setTick] = useState(0);
+  const forceUpdate = () => setTick((t: number) => t + 1);
 
   function captureSnapshot(
     gl: WebGL2RenderingContext,
@@ -76,6 +80,8 @@ export function useHistory() {
 
     // resets redo because last move was a stroke (doesn't reset after 'undo')
     redoStack.current = [];
+
+    forceUpdate();  // triggers re-render
   }
 
   function undo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
@@ -89,6 +95,7 @@ export function useHistory() {
     const previous = undoStack.current[undoStack.current.length - 1];
     restoreSnapshot(gl, layers, previous);
 
+    forceUpdate();  // triggers re-render
     return true;
   }
 
@@ -102,6 +109,7 @@ export function useHistory() {
     
     restoreSnapshot(gl, layers, next);
 
+    forceUpdate(); // triggers re-render
     return true;
   }
 
