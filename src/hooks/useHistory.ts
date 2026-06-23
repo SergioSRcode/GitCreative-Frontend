@@ -23,17 +23,17 @@ export function useHistory() {
     gl: WebGL2RenderingContext,
     layers: Layer[]
   ): Snapshot {
+    const canvas = gl.canvas as HTMLCanvasElement;
     return {
       layers: layers.map(layer => {
-        const { width, height } = gl.canvas as HTMLCanvasElement;
-        const pixels = new Uint8Array(width * height * 4);
+        const pixels = new Uint8Array(canvas.width * canvas.height * 4);
 
         // binds layers framebuffer so readPixels can read from texture
         gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-        return { id: layer.id, pixels, width, height };
+        return { id: layer.id, pixels, width: canvas.width, height: canvas.height };
       }),
     }
   }
@@ -45,7 +45,7 @@ export function useHistory() {
     snapshot: Snapshot
   ) {
     for (const saved of snapshot.layers) {
-      const layer = layers.find(layer => layer.id === saved.id);
+      const layer = layers.find(l => l.id === saved.id);
       if (!layer) continue;
 
       // texSubImage2D writes into textures directly => no framebuffer needed.
@@ -68,6 +68,7 @@ export function useHistory() {
   // is called after each completed stroke
   function pushSnapshot(gl: WebGL2RenderingContext, layers: Layer[]) {
     const snapshot = captureSnapshot(gl, layers);
+
     undoStack.current.push(snapshot);
 
     // Trims to keep memory usage bounded
@@ -78,13 +79,14 @@ export function useHistory() {
   }
 
   function undo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
-    if (undoStack.current.length === 0) return false;
+    if (undoStack.current.length <= 1) return false;
 
     // saves current state to redo stack before restoring prev capture
     const current = captureSnapshot(gl, layers);
     redoStack.current.push(current);
+    undoStack.current.pop();
 
-    const previous = undoStack.current.pop()!;
+    const previous = undoStack.current[undoStack.current.length - 1];
     restoreSnapshot(gl, layers, previous);
 
     return true;
@@ -93,18 +95,18 @@ export function useHistory() {
   function redo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
     if (redoStack.current.length === 0) return false;
 
-    // saves current state to undo stack before restoring capture
-    const current = captureSnapshot(gl, layers);
-    undoStack.current.push(current);
-
     const next = redoStack.current.pop()!;
+    const current = captureSnapshot(gl, layers);
+    // saves current state to undo stack before restoring capture
+    undoStack.current.push(current);
+    
     restoreSnapshot(gl, layers, next);
 
     return true;
   }
 
   function canUndo() { 
-    return undoStack.current.length > 0;
+    return undoStack.current.length > 1;
   }
 
   function canRedo() {

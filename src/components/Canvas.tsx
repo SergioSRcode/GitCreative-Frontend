@@ -32,7 +32,7 @@ export function Canvas() {
   const [showPicker, setShowPicker] = useState(false);
 
   const {
-    layers, activeLayer, activeLayerId, setActiveLayerId,
+    layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
     init, addLayer, deleteLayer, moveLayer,
     setVisibility, setOpacity, setBlendMode, renameLayer,
   } = useLayers();
@@ -85,7 +85,7 @@ export function Canvas() {
       gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
     );
 
-    for (const layer of layers) {
+    for (const layer of layersRef.current) {
       if (!layer.visible) continue;
       compositorRef.current!.drawLayer(layer, canvas.width, canvas.height);
     }
@@ -132,7 +132,7 @@ export function Canvas() {
       const canvas = canvasRef.current!;
       const point  = getPoint(e);
       const sampled = sampleColorFromLayer(
-        gl, layers[0], point.x, point.y, canvas.height
+        gl, layersRef.current[0], point.x, point.y, canvas.height
       );
 
       setHsvColor(rgbToHsv(sampled));
@@ -166,23 +166,23 @@ export function Canvas() {
 
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
     const gl = glRef.current!;
-    pushSnapshot(gl, layers);
+    pushSnapshot(gl, layersRef.current);
   }
 
   function handleUndo() {
     const gl = glRef.current!;
-    if (undo(gl, layers)) compositeToScreen();
+    if (undo(gl, layersRef.current)) compositeToScreen();
   }
 
   function handleRedo() {
     const gl = glRef.current!;
-    if (redo(gl, layers)) compositeToScreen();
+    if (redo(gl, layersRef.current)) compositeToScreen();
   }
 
   async function handleExport(format: ExportFormat) {
     const gl = glRef.current!;
     const canvas = canvasRef.current!;
-    await exportCanvas(gl, layers, canvas.width, canvas.height, format, 'my-painting');
+    await exportCanvas(gl, layersRef.current, canvas.width, canvas.height, format, 'my-painting');
   }
 
   useEffect(() => {
@@ -195,17 +195,14 @@ export function Canvas() {
     compositorRef.current = new Compositor(gl);
 
     resizeCanvas(canvas);
+    init(glRef.current, canvas.width, canvas.height);
 
-    // callback === onReady in useLayers hook; creates initial snapshot
-    init(gl, canvas.width, canvas.height, (gl, initialLayers) => {
-      pushSnapshot(gl, initialLayers);
+    // pushes baseline snapshot after init, 
+    // setTimeout ensurees that layersRef.current is populated before snapshot is captured
+    setTimeout(() => {
+      pushSnapshot(gl, layersRef.current);
       compositeToScreen();
-    });
-
-    function handleResize() {
-      resizeCanvas(canvas);
-      compositeToScreen();
-    }
+    }, 0);
 
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
@@ -217,13 +214,18 @@ export function Canvas() {
         if (e.shiftKey) {
           // cmd+Shift+z => redo
           const gl = glRef.current!;
-          if (redo(gl, layers)) compositeToScreen();
+          if (redo(gl, layersRef.current)) compositeToScreen();
         } else {
           // cmd+z => undo
           const gl = glRef.current!;
-          if (undo(gl, layers)) compositeToScreen();
+          if (undo(gl, layersRef.current)) compositeToScreen();
         }
       }
+    }
+
+    function handleResize() {
+      resizeCanvas(canvas);
+      compositeToScreen();
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -233,12 +235,12 @@ export function Canvas() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
     }
-  }, [layers]);  // [layers] is important so undo/redo can receive layers to work with
+  }, []); 
 
   // Re-composite whenever layer state changes (visibility, opacity, order, blend mode)
   useEffect(() => {
     if (glRef.current && compositorRef.current) compositeToScreen();
-  }, [layers]);
+  }, [layersDisplay]);
 
   const currentHex = rgbToHex(rgb);
 
@@ -253,6 +255,35 @@ export function Canvas() {
         boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         width: 244,
       }}>
+
+        {/* Undo / Redo */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo()}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canUndo() ? 'white' : '#f8f8f8',
+              color: canUndo() ? '#000' : '#bbb',
+              cursor: canUndo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↩ Undo</button>
+          <button
+            onClick={handleRedo}
+            disabled={!canRedo()}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canRedo() ? 'white' : '#f8f8f8',
+              color: canRedo() ? '#000' : '#bbb',
+              cursor: canRedo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↪ Redo</button>
+        </div>
+
         {/* Brush selector */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['pencil', 'ink', 'eraser'] as BrushType[]).map(type => (
@@ -321,39 +352,11 @@ export function Canvas() {
             >export {fmt.toUpperCase()}</button>
           ))}
         </div>
-
-        {/* Undo / Redo */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={handleUndo}
-            disabled={!canUndo()}
-            style={{
-              flex: 1, padding: '4px 0', borderRadius: 6,
-              border: '1px solid #ddd',
-              background: canUndo() ? 'white' : '#f8f8f8',
-              color: canUndo() ? '#000' : '#bbb',
-              cursor: canUndo() ? 'pointer' : 'default',
-              fontSize: 13,
-            }}
-          >↩ Undo</button>
-          <button
-            onClick={handleRedo}
-            disabled={!canRedo()}
-            style={{
-              flex: 1, padding: '4px 0', borderRadius: 6,
-              border: '1px solid #ddd',
-              background: canRedo() ? 'white' : '#f8f8f8',
-              color: canRedo() ? '#000' : '#bbb',
-              cursor: canRedo() ? 'pointer' : 'default',
-              fontSize: 13,
-            }}
-          >↪ Redo</button>
-        </div>
       </div>
 
       {/* Layer panel */}
       <LayerPanel
-        layers={layers}
+        layers={layersDisplay}
         activeLayerId={activeLayerId}
         onSelect={setActiveLayerId}
         onAdd={addLayer}
