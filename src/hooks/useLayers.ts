@@ -20,7 +20,8 @@ export function useLayers() {
     const first = createLayer(gl, width, height, 'Layer 1');
     const initial = [first];
     setLayers(initial);
-    setActiveLayerId(first.id);
+    // setActiveLayerId(first.id);
+    setActiveLayerId(initial[0].id);
     // notifies Canvas.tsx that layers are ready, so initial snapshot can be pushed (important for undo/redo)
     onReady(gl, initial);
   }

@@ -321,6 +321,34 @@ export function Canvas() {
             >export {fmt.toUpperCase()}</button>
           ))}
         </div>
+
+        {/* Undo / Redo */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo()}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canUndo() ? 'white' : '#f8f8f8',
+              color: canUndo() ? '#000' : '#bbb',
+              cursor: canUndo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↩ Undo</button>
+          <button
+            onClick={handleRedo}
+            disabled={!canRedo()}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canRedo() ? 'white' : '#f8f8f8',
+              color: canRedo() ? '#000' : '#bbb',
+              cursor: canRedo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↪ Redo</button>
+        </div>
       </div>
 
       {/* Layer panel */}
