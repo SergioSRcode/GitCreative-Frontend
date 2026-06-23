@@ -10,6 +10,7 @@ import { sampleColorFromLayer } from '../utils/eyedropper';
 import { exportCanvas } from '../utils/export';
 import type { ExportFormat } from '../utils/export';
 import { useLayers } from '../hooks/useLayers';
+import { useHistory } from '../hooks/useHistory';
 import { ColorPicker } from './ColorPicker';
 import { RecentColors } from './RecentColors';
 import { LayerPanel } from './LayerPanel';
@@ -35,6 +36,8 @@ export function Canvas() {
     init, addLayer, deleteLayer, moveLayer,
     setVisibility, setOpacity, setBlendMode, renameLayer,
   } = useLayers();
+
+  const { pushSnapshot, undo, redo, canUndo, canRedo } = useHistory();
 
   const rgb: RGBColor = hsvToRgb(hsvColor);
   const brush: Brush = {
@@ -160,6 +163,20 @@ export function Canvas() {
     currentPoints.current.push(getPoint(e));
     renderCurrentStrokeToLayer();
     currentPoints.current = [];
+
+    // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
+    const gl = glRef.current!;
+    pushSnapshot(gl, layers);
+  }
+
+  function handleUndo() {
+    const gl = glRef.current!;
+    if (undo(gl, layers)) compositeToScreen();
+  }
+
+  function handleRedo() {
+    const gl = glRef.current!;
+    if (redo(gl, layers)) compositeToScreen();
   }
 
   async function handleExport(format: ExportFormat) {
@@ -178,7 +195,12 @@ export function Canvas() {
     compositorRef.current = new Compositor(gl);
 
     resizeCanvas(canvas);
-    init(gl, canvas.width, canvas.height);
+
+    // callback === onReady in useLayers hook; creates initial snapshot
+    init(gl, canvas.width, canvas.height, (gl, initialLayers) => {
+      pushSnapshot(gl, initialLayers);
+      compositeToScreen();
+    });
 
     function handleResize() {
       resizeCanvas(canvas);
