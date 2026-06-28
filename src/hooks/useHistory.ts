@@ -48,23 +48,36 @@ export function useHistory() {
     layers: Layer[],
     snapshot: Snapshot
   ) {
-    for (const saved of snapshot.layers) {
-      const layer = layers.find(l => l.id === saved.id);
-      if (!layer) continue;
 
-      // texSubImage2D writes into textures directly => no framebuffer needed.
-      gl.bindTexture(gl.TEXTURE_2D, layer.texture);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D,
-        0,  // mip level
-        0, 0,  // x, y offset => 0, 0 = overwrite from the top-left
-        saved.width,
-        saved.height,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        saved.pixels,
-      );
-      gl.bindTexture(gl.TEXTURE_2D, null);
+    // const snapshotIds = new Set(snapshot.layers.map(snap => snap.id));
+
+    for (const layer of layers) {
+      const saved = snapshot.layers.find(snap => snap.id === layer.id);
+      if (saved) {
+        // if Layer exists in this snapshot => restore its pixels
+        gl.bindTexture(gl.TEXTURE_2D, layer.texture);
+        // texSubImage2D writes into textures directly => no framebuffer needed.
+        gl.texSubImage2D(
+          gl.TEXTURE_2D,
+          0,  // mip level
+          0, 0,  // x, y offset => 0, 0 = overwrite from the top-left
+          saved.width,
+          saved.height,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          saved.pixels,
+        );
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      } else {
+        // if Layer was created after snapshot (is without snapshot) => clears it to transparent
+        // => this makes it appear empty in historical state, avoids bug where a line without snapshot is ignored on 'undo'
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      }
+
+
     }
   }
 
