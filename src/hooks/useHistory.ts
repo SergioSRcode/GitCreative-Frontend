@@ -100,11 +100,14 @@ export function useHistory() {
   function undo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
     if (undoStack.current.length <= 1) return false;
 
-    // saves current state to redo stack before restoring prev capture
-    const current = captureSnapshot(gl, layers);
-    redoStack.current.push(current);
-    undoStack.current.pop();
+    // removes last/previous state (top) from undoStack making it the current state
+    const current = undoStack.current.pop();
+    if (!current) return false;
 
+    // moves previous state to redoStack
+    redoStack.current.push(current);
+
+    // restores previous state (new top)
     const previous = undoStack.current[undoStack.current.length - 1];
     restoreSnapshot(gl, layers, previous);
 
@@ -115,11 +118,9 @@ export function useHistory() {
   function redo(gl: WebGL2RenderingContext, layers: Layer[]): boolean {
     if (redoStack.current.length === 0) return false;
 
+    // moves top of redoStack back to undoStack and restores it
     const next = redoStack.current.pop()!;
-    const current = captureSnapshot(gl, layers);
-    // saves current state to undo stack before restoring capture
-    undoStack.current.push(current);
-    
+    undoStack.current.push(next);
     restoreSnapshot(gl, layers, next);
 
     forceUpdate(); // triggers re-render
