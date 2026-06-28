@@ -79,16 +79,24 @@ export function Canvas() {
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(1, 1, 1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND);
-    gl.blendFuncSeparate(
-      gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
-      gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
-    );
+    gl.disable(gl.BLEND);
+    // gl.enable(gl.BLEND);
+    // gl.blendFuncSeparate(
+    //   gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
+    //   gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
+    // );
 
     for (const layer of layersRef.current) {
       if (!layer.visible) continue;
       compositorRef.current!.drawLayer(layer, canvas.width, canvas.height);
     }
+
+    // re-enables blending for any subsequent draw calls
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
+    );
   }
 
   function renderCurrentStrokeToLayer() {

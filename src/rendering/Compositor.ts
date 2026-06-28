@@ -119,6 +119,7 @@ export class Compositor {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, this.backdropTexture);
     gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, width, height, 0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   // Draws a single layer's texture onto whatever framebuffer is currently bound
@@ -146,7 +147,7 @@ export class Compositor {
     // Slot 1 => captured backdrop (everything composited underneath this layer)
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.backdropTexture);
-    gl.uniform1i(this.backdropLoc, 0);
+    gl.uniform1i(this.backdropLoc, 1);
 
     gl.uniform1f(this.opacityLoc, layer.opacity);
     gl.uniform1i(this.blendModeLoc, BLEND_MODE_INT[layer.blendMode] ?? 0);
