@@ -24,6 +24,7 @@ export function Canvas() {
   const compositorRef = useRef<Compositor | null>(null);
   const isDrawing = useRef(false);
   const currentPoints = useRef<StrokePoint[]>([]);
+  const initializedRef = useRef(false);
 
   const [brushType, setBrushType] = useState<BrushType>('ink');
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
@@ -194,6 +195,10 @@ export function Canvas() {
   }
 
   useEffect(() => {
+    // guards agains React strict mode double-invocation in development
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     const canvas = canvasRef.current!;
     const gl = canvas.getContext('webgl2');
     if (!gl) { console.error('WebGL2 not supported'); return };
@@ -203,14 +208,11 @@ export function Canvas() {
     compositorRef.current = new Compositor(gl);
 
     resizeCanvas(canvas);
-    init(glRef.current, canvas.width, canvas.height);
+    // init(glRef.current, canvas.width, canvas.height);
+    init(gl, canvas.width, canvas.height);
 
-    // pushes baseline snapshot after init, 
-    // setTimeout ensurees that layersRef.current is populated before snapshot is captured
-    setTimeout(() => {
-      pushSnapshot(gl, layersRef.current);
-      compositeToScreen();
-    }, 0);
+    pushSnapshot(gl, layersRef.current);
+    compositeToScreen();
 
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
