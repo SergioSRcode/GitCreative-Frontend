@@ -109,6 +109,21 @@ export function useLayers() {
     syncDisplay();
   }
 
+  function clearLayer(id: string) {
+    const gl = glRef.current;
+    if (!gl) return;
+
+    const layer = layersRef.current.find(l => l.id === id);
+    if (!layer) return;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    syncDisplay();
+  }
+
   return {
     layersRef,
     layersDisplay,
@@ -123,5 +138,6 @@ export function useLayers() {
     setOpacity,
     setBlendMode,
     renameLayer,
+    clearLayer,
   };
 }

@@ -1,5 +1,6 @@
 import type { Layer, BlendMode } from "../types/layer";
 import { BLEND_MODES } from "../types/layer";
+import { ClearLayerButton } from "./ClearLayerButton";
 
 type Props = {
   layers: Layer[],
@@ -13,12 +14,13 @@ type Props = {
   onOpacity: (id: string, opacity: number) => void,
   onBlendMode: (id: string, blendMode: BlendMode) => void,
   onRename: (id: string, name: string) => void,
+  onClear: (id: string) => void
 };
 
 export function LayerPanel({
   layers, activeLayerId, 
   onSelect, onAdd, onDelete, onMoveUp, onMoveDown, 
-  onVisibility, onOpacity, onBlendMode, onRename
+  onVisibility, onOpacity, onBlendMode, onRename, onClear,
 }: Props) {
   // Reverses for display only => top layer on top
   // spread avoids mutating the array
@@ -124,6 +126,10 @@ export function LayerPanel({
             <span style={{ fontSize: 11, color: '#888', minWidth: 28 }}>
               {Math.round(layer.opacity * 100)}%
             </span>
+          </div>
+          {/* Clear layer — confirm-on-second-click */}
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <ClearLayerButton onConfirm={() => onClear(layer.id)} />
           </div>
         </div>
       ))}

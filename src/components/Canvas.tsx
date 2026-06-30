@@ -44,7 +44,7 @@ export function Canvas() {
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
     init, addLayer, deleteLayer, moveLayer,
-    setVisibility, setOpacity, setBlendMode, renameLayer,
+    setVisibility, setOpacity, setBlendMode, renameLayer, clearLayer,
   } = useLayers();
 
   const { pushSnapshot, undo, redo, canUndo, canRedo } = useHistory();
@@ -245,6 +245,15 @@ export function Canvas() {
     );
     gl.bindTexture(gl.TEXTURE_2D, null);
 
+    compositeToScreen();
+    pushSnapshot(gl, layersRef.current);
+  }
+
+  function handleClearLayer(id: string) {
+    const gl = glRef.current;
+    if (!gl) return;
+
+    clearLayer(id);
     compositeToScreen();
     pushSnapshot(gl, layersRef.current);
   }
@@ -521,6 +530,7 @@ export function Canvas() {
         onOpacity={setOpacity}
         onBlendMode={setBlendMode}
         onRename={renameLayer}
+        onClear={handleClearLayer}
       />
 
       {/* Canvas */}
