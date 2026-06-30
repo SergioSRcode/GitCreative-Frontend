@@ -14,6 +14,8 @@ import { useHistory } from '../hooks/useHistory';
 import { ColorPicker } from './ColorPicker';
 import { RecentColors } from './RecentColors';
 import { LayerPanel } from './LayerPanel';
+import { SizeBar } from './SizeBar';
+import { BrushPreview } from './BrushPreview';
 
 const MAX_RECENT = 10;
 
@@ -31,6 +33,9 @@ export function Canvas() {
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
   const [eyedropper, setEyedropper] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [brushSize, setBrushSize] = useState(12);
+  const [sizeBarActive, setSizeBarActive] = useState(false);
+  const [canvasPixelSize, setCanvasPixelSize] = useState({ width: 0, height: 0 });
 
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
@@ -43,7 +48,7 @@ export function Canvas() {
   const rgb: RGBColor = hsvToRgb(hsvColor);
   const brush: Brush = {
     type:    brushType,
-    size:    brushType === 'pencil' ? 18 : brushType === 'eraser' ? 40 : 10,
+    size:    brushSize,
     opacity: 1.0,
     color:   [rgb.r, rgb.g, rgb.b],
   };
@@ -56,6 +61,7 @@ export function Canvas() {
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
       canvas.width = displayWidth;
       canvas.height = displayHeight;
+      setCanvasPixelSize({ width: displayWidth, height: displayHeight });
     }
   }
 
@@ -208,6 +214,7 @@ export function Canvas() {
     compositorRef.current = new Compositor(gl);
 
     resizeCanvas(canvas);
+    setCanvasPixelSize({ width: canvas.width, height: canvas.height });
     // init(glRef.current, canvas.width, canvas.height);
     init(gl, canvas.width, canvas.height);
 
@@ -363,6 +370,20 @@ export function Canvas() {
           ))}
         </div>
       </div>
+      {/* Size bar — left edge, vertically centred */}
+      <SizeBar
+        size={brushSize}
+        onChange={setBrushSize}
+        onInteracting={setSizeBarActive}
+      />
+
+      {/* Brush size preview — centred on canvas, visible while interacting */}
+      <BrushPreview
+        size={brushSize}
+        visible={sizeBarActive}
+        canvasWidth={canvasPixelSize.width}
+        canvasHeight={canvasPixelSize.height}
+      />
 
       {/* Layer panel */}
       <LayerPanel

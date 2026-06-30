@@ -72,7 +72,7 @@ export function SizeBar({ size, min = 1, max = 500, onChange, onInteracting }: P
         {size}
       </div>
 
-      {/* The bar track */}
+      {/* The bar track — wider hit area via width, visual track stays narrow */}
       <div
         ref={barRef}
         onPointerDown={handlePointerDown}
@@ -80,41 +80,51 @@ export function SizeBar({ size, min = 1, max = 500, onChange, onInteracting }: P
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         style={{
-          width: 6,
+          width: 28,
           height: 180,
-          background: 'rgba(0,0,0,0.15)',
           borderRadius: 3,
           position: 'relative',
           cursor: 'ns-resize',
-          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
         }}
       >
-        {/* Filled portion — from bottom up to thumb */}
+        {/* Visual track */}
         <div style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: `${100 - thumbPct}%`,
-          background: 'rgba(0,0,0,0.5)',
+          width: 6,
+          height: '100%',
+          background: 'rgba(0,0,0,0.15)',
           borderRadius: 3,
-          transition: 'height 0.05s',
-        }} />
+          position: 'relative',
+          backdropFilter: 'blur(4px)',
+        }}>
+          {/* Filled portion */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: `${100 - thumbPct}%`,
+            background: 'rgba(0,0,0,0.5)',
+            borderRadius: 3,
+            transition: 'height 0.05s',
+          }} />
 
-        {/* Thumb */}
-        <div style={{
-          position: 'absolute',
-          left: '50%',
-          top: `${thumbPct}%`,
-          transform: 'translate(-50%, -50%)',
-          width: 14,
-          height: 14,
-          borderRadius: '50%',
-          background: 'white',
-          border: '1px solid rgba(0,0,0,0.3)',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-          pointerEvents: 'none',
-        }} />
+          {/* Thumb */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            top: `${thumbPct}%`,
+            transform: 'translate(-50%, -50%)',
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            background: 'white',
+            border: '1px solid rgba(0,0,0,0.3)',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+            pointerEvents: 'none',
+          }} />
+        </div>
       </div>
     </div>
   );
