@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StrokePoint, Stroke } from '../types/stroke';
-import type { Brush, BrushType } from '../types/brush';
+import type { Brush, Tool } from '../types/brush';
 import type { HSVColor, RGBColor } from '../types/color';
 import { hsvToRgb, rgbToHsv, rgbToHex } from '../utils/color';
 import { resample, smooth } from '../utils/stroke';
@@ -16,6 +16,7 @@ import { RecentColors } from './RecentColors';
 import { LayerPanel } from './LayerPanel';
 import { SizeBar } from './SizeBar';
 import { BrushPreview } from './BrushPreview';
+import { floodFill } from '../utils/fill';
 
 const MAX_RECENT = 10;
 
@@ -28,7 +29,6 @@ export function Canvas() {
   const currentPoints = useRef<StrokePoint[]>([]);
   const initializedRef = useRef(false);
 
-  const [brushType, setBrushType] = useState<BrushType>('ink');
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
   const [eyedropper, setEyedropper] = useState(false);
@@ -36,6 +36,9 @@ export function Canvas() {
   const [brushSize, setBrushSize] = useState(12);
   const [sizeBarActive, setSizeBarActive] = useState(false);
   const [canvasPixelSize, setCanvasPixelSize] = useState({ width: 0, height: 0 });
+  const [tool, setTool] = useState<Tool>('ink');
+  const [fillTolerance, setFillTolerance] = useState(32);  // range is 0-255
+
 
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
@@ -46,12 +49,14 @@ export function Canvas() {
   const { pushSnapshot, undo, redo, canUndo, canRedo } = useHistory();
 
   const rgb: RGBColor = hsvToRgb(hsvColor);
-  const brush: Brush = {
-    type:    brushType,
-    size:    brushSize,
-    opacity: 1.0,
-    color:   [rgb.r, rgb.g, rgb.b],
-  };
+  const brush: Brush | null = tool === 'fill' 
+    ? null
+    : {
+      type:    tool,
+      size:    brushSize,
+      opacity: 1.0,
+      color:   [rgb.r, rgb.g, rgb.b],
+    };
 
   function resizeCanvas(canvas: HTMLCanvasElement) {
     const dpr = window.devicePixelRatio || 1;
@@ -107,8 +112,8 @@ export function Canvas() {
   }
 
   function renderCurrentStrokeToLayer() {
-    const gl = glRef.current!;
-    if (!activeLayer) return;
+    const gl = glRef.current;
+    if (!gl || !activeLayer || !brush) return;
     if (currentPoints.current.length < 2) return;
 
     const spacing   = Math.max(brush.size * 0.15, 1);
@@ -156,6 +161,11 @@ export function Canvas() {
       return;
     }
 
+    if (tool === 'fill') {
+      handleFill(e);
+      return;
+    }
+
     canvasRef.current!.setPointerCapture(e.pointerId);
     isDrawing.current     = true;
     currentPoints.current = [getPoint(e)];
@@ -198,6 +208,49 @@ export function Canvas() {
     const gl = glRef.current!;
     const canvas = canvasRef.current!;
     await exportCanvas(gl, layersRef.current, canvas.width, canvas.height, format, 'my-painting');
+  }
+
+  function handleFill(e: React.PointerEvent<HTMLCanvasElement>) {
+    const gl = glRef.current;
+    if (!gl || !activeLayer) return;
+
+    const point  = getPoint(e);
+    const canvas = canvasRef.current!;
+    const x = Math.floor(point.x);
+    const y = Math.floor(canvas.height - point.y); // flip Y — same convention as readPixels/eyedropper
+
+    if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) return;
+
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    const fillColor: [number, number, number, number] = [
+      Math.round(rgb.r * 255),
+      Math.round(rgb.g * 255),
+      Math.round(rgb.b * 255),
+      255,
+    ];
+
+    const didFill = floodFill(
+      pixels, canvas.width, canvas.height,
+      x, y, fillColor, fillTolerance
+    );
+
+    if (!didFill) return;
+
+    gl.bindTexture(gl.TEXTURE_2D, activeLayer.texture);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0,
+      canvas.width, canvas.height,
+      gl.RGBA, gl.UNSIGNED_BYTE,
+      pixels
+    );
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    compositeToScreen();
+    pushSnapshot(gl, layersRef.current);
   }
 
   useEffect(() => {
@@ -301,22 +354,39 @@ export function Canvas() {
           >↪ Redo</button>
         </div>
 
-        {/* Brush selector */}
+        {/* Tool selector — now includes Fill */}
         <div style={{ display: 'flex', gap: 6 }}>
-          {(['pencil', 'ink', 'eraser'] as BrushType[]).map(type => (
+          {(['pencil', 'ink', 'eraser', 'fill'] as Tool[]).map(t => (
             <button
-              key={type}
-              onClick={() => { setBrushType(type); setEyedropper(false) }}
+              key={t}
+              onClick={() => { setTool(t); setEyedropper(false) }}
               style={{
                 flex: 1, padding: '4px 0', borderRadius: 6,
                 border: '1px solid #ddd',
-                background: brushType === type && !eyedropper ? '#f0f0f0' : 'white',
-                fontWeight: brushType === type && !eyedropper ? 600 : 400,
+                background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
+                fontWeight: tool === t && !eyedropper ? 600 : 400,
                 cursor: 'pointer', fontSize: 13,
               }}
-            >{type}</button>
+            >{t}</button>
           ))}
         </div>
+
+        {/* Fill tolerance slider — only visible while Fill tool is active.
+            Stays visible as long as tool === 'fill', since tool only changes
+            on explicit user action, never automatically */}
+        {tool === 'fill' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#888' }}>Tolerance</span>
+            <input
+              type="range" min={0} max={255} step={1}
+              value={fillTolerance}
+              onChange={e => setFillTolerance(parseInt(e.target.value))}
+              aria-label="Fill tolerance"
+              style={{ flex: 1 }}
+            />
+            <span style={{ fontSize: 11, color: '#888', minWidth: 28 }}>{fillTolerance}</span>
+          </div>
+        )}
 
         {/* Color swatch + eyedropper */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -406,7 +476,7 @@ export function Canvas() {
         style={{
           display: 'block', width: '100vw', height: '100vh',
           touchAction: 'none',
-          cursor: eyedropper ? 'crosshair' : 'default',
+          cursor: eyedropper ? 'crosshair' : tool === 'fill' ? 'cell' : 'default',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

@@ -1,4 +1,5 @@
 export type BrushType = 'pencil' | 'ink' | 'eraser';
+export type Tool = BrushType | 'fill';
 
 export type Brush = {
   type: BrushType,
