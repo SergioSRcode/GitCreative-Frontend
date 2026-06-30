@@ -8,7 +8,7 @@ type Props = {
   onInteracting: (active: boolean) => void,
 };
 
-export function sizeBar({ size, min = 1, max = 500, onChange, onInteracting }: Props) {
+export function SizeBar({ size, min = 1, max = 500, onChange, onInteracting }: Props) {
   const barRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
