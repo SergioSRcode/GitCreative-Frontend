@@ -84,7 +84,6 @@ export function useHistory() {
   // pushes new snapshot onto the undo stack
   // is called after each completed stroke
   function pushSnapshot(gl: WebGL2RenderingContext, layers: Layer[]) {
-    console.log('pushSnapshot, stack size before:', undoStack.current.length)
     const snapshot = captureSnapshot(gl, layers);
 
     undoStack.current.push(snapshot);
