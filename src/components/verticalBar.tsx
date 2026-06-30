@@ -1,23 +1,23 @@
-import { useRef } from 'react';
+import { useRef } from 'react'
 
 type Props = {
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-  onInteracting?: (active: boolean) => void;
-  formatLabel?: (value: number) => string;
-  left: number;  // horizontal position — lets us place multiple bars side by side
-}
+  value: number,
+  min: number,
+  max: number,
+  step?: number,
+  onChange: (value: number) => void,
+  onInteracting?: (active: boolean) => void,
+  formatLabel?: (value: number) => string,
+  height?: number,
+};
 
 export function VerticalBar({
   value, min, max, step = 1,
   onChange, onInteracting,
   formatLabel = v => String(v),
-  left,
+  height = 150,
 }: Props) {
-  const barRef = useRef<HTMLDivElement>(null);
+  const barRef     = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
   function clientYToValue(clientY: number): number {
@@ -26,7 +26,6 @@ export function VerticalBar({
     const t    = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
     const inverted = 1 - t;
     const raw = min + inverted * (max - min);
-    // Snap to step
     return Math.round(raw / step) * step;
   }
 
@@ -53,18 +52,12 @@ export function VerticalBar({
 
   return (
     <div style={{
-      position: 'absolute',
-      left,
-      top: '50%',
-      transform: 'translateY(-50%)',
-      zIndex: 10,
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       gap: 8,
       userSelect: 'none',
     }}>
-      {/* Value label above bar */}
       <div style={{
         background: 'rgba(0,0,0,0.6)',
         color: 'white',
@@ -78,7 +71,6 @@ export function VerticalBar({
         {formatLabel(value)}
       </div>
 
-      {/* The bar track — wider hit area, narrow visual track inside */}
       <div
         ref={barRef}
         onPointerDown={handlePointerDown}
@@ -87,7 +79,7 @@ export function VerticalBar({
         onPointerLeave={handlePointerUp}
         style={{
           width: 28,
-          height: 180,
+          height,
           borderRadius: 3,
           position: 'relative',
           cursor: 'ns-resize',
@@ -103,7 +95,6 @@ export function VerticalBar({
           position: 'relative',
           backdropFilter: 'blur(4px)',
         }}>
-          {/* Filled portion */}
           <div style={{
             position: 'absolute',
             bottom: 0,
@@ -115,7 +106,6 @@ export function VerticalBar({
             transition: 'height 0.05s',
           }} />
 
-          {/* Thumb */}
           <div style={{
             position: 'absolute',
             left: '50%',
@@ -132,5 +122,5 @@ export function VerticalBar({
         </div>
       </div>
     </div>
-  )
+  );
 }

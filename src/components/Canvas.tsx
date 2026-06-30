@@ -14,7 +14,7 @@ import { useHistory } from '../hooks/useHistory';
 import { ColorPicker } from './ColorPicker';
 import { RecentColors } from './RecentColors';
 import { LayerPanel } from './LayerPanel';
-import { SizeBar } from './SizeBar';
+import { VerticalBar } from './VerticalBar';
 import { BrushPreview } from './BrushPreview';
 import { floodFill } from '../utils/fill';
 
@@ -38,6 +38,7 @@ export function Canvas() {
   const [canvasPixelSize, setCanvasPixelSize] = useState({ width: 0, height: 0 });
   const [tool, setTool] = useState<Tool>('ink');
   const [fillTolerance, setFillTolerance] = useState(32);  // range is 0-255
+  const [brushOpacity, setBrushOpacity] = useState(1.0);
 
 
   const {
@@ -54,7 +55,7 @@ export function Canvas() {
     : {
       type:    tool,
       size:    brushSize,
-      opacity: 1.0,
+      opacity: brushOpacity,
       color:   [rgb.r, rgb.g, rgb.b],
     };
 
@@ -467,12 +468,37 @@ export function Canvas() {
           ))}
         </div>
       </div>
-      {/* Size bar — left edge, vertically centred */}
-      <SizeBar
-        size={brushSize}
-        onChange={setBrushSize}
-        onInteracting={setSizeBarActive}
-      />
+      <div style={{
+        position: 'absolute',
+        left: 12,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 24,
+      }}>
+        {/* Brush size bar — upper half of the left edge */}
+        <VerticalBar
+          value={brushSize}
+          min={1}
+          max={500}
+          onChange={setBrushSize}
+          onInteracting={setSizeBarActive}
+          formatLabel={v => String(v)}
+        />
+
+        {/* Brush opacity bar — lower half of the left edge */}
+        <VerticalBar
+          value={brushOpacity}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={setBrushOpacity}
+          formatLabel={v => `${Math.round(v * 100)}%`}
+        />
+      </div>
+      
 
       {/* Brush size preview — centred on canvas, visible while interacting */}
       <BrushPreview
