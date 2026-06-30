@@ -5,6 +5,7 @@ import dabVertSrc from '../shaders/dab.vert?raw';
 import inkFragSrc from '../shaders/ink.frag?raw';
 import pencilFragSrc from '../shaders/pencil.frag?raw';
 import eraserFragSrc from '../shaders/eraser.frag?raw';
+import airbrushFragSrc from '../shaders/airbrush.frag?raw';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -42,10 +43,19 @@ type ProgramSet = {
   colorLoc: WebGLUniformLocation | null,
 };
 
+interface AirbrushProgramSet extends ProgramSet {
+  hardnessLoc: WebGLUniformLocation;
+}
+
 export class BrushRenderer {
   private gl: WebGL2RenderingContext;
   private buffer: WebGLBuffer;
-  private programs: Record<'ink' | 'pencil' | 'eraser', ProgramSet>;
+  private programs: {
+    ink: ProgramSet,
+    pencil: ProgramSet,
+    eraser: ProgramSet,
+    airbrush: AirbrushProgramSet,
+  };
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -55,6 +65,7 @@ export class BrushRenderer {
       ink:    this.buildProgramSet(inkFragSrc),
       pencil: this.buildProgramSet(pencilFragSrc),
       eraser: this.buildProgramSet(eraserFragSrc),
+      airbrush: this.buildAirbrushProgramSet(airbrushFragSrc),  // needs hardness uniform
     };
   }
 
@@ -71,6 +82,19 @@ export class BrushRenderer {
       colorLoc:      gl.getUniformLocation(program, 'u_color'),
     };
   }
+
+  private buildAirbrushProgramSet(fragSrc: string): AirbrushProgramSet {
+    const gl = this.gl
+    const program = createProgram(gl, dabVertSrc, fragSrc)
+    return {
+      program,
+      positionLoc:   gl.getAttribLocation(program, 'a_position'),
+      localPosLoc:   gl.getAttribLocation(program, 'a_localPos'),
+      resolutionLoc: gl.getUniformLocation(program, 'u_resolution')!,
+      colorLoc:      gl.getUniformLocation(program, 'u_color'),
+      hardnessLoc:   gl.getUniformLocation(program, 'u_hardness')!,
+    }
+  } 
 
   render(stroke: Stroke, brush: Brush, targetFramebuffer: WebGLFramebuffer | null, width: number, height: number) {
     const gl = this.gl;
@@ -114,6 +138,49 @@ export class BrushRenderer {
     gl.enableVertexAttribArray(set.positionLoc);
     gl.vertexAttribPointer(set.positionLoc, 2, gl.FLOAT, false, stride, 0);
 
+    gl.enableVertexAttribArray(set.localPosLoc);
+    gl.vertexAttribPointer(set.localPosLoc, 2, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
+
+    gl.drawArrays(gl.TRIANGLES, 0, data.length / 4);
+  }
+
+  // Deposits one airbrush dab at a single point, with a given tick alpha
+  // (the per-tick deposit strength, already computed via asymptotic accumulation)
+  renderAirbrushTick(
+    point: { x: number; y: number; pressure: number },
+    hardness: number,
+    tickAlpha: number,
+    color: [number, number, number],
+    size: number,
+    targetFramebuffer: WebGLFramebuffer | null,
+    width: number,
+    height: number
+  ) {
+    const gl  = this.gl;
+    const set = this.programs.airbrush;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.useProgram(set.program);
+    gl.uniform2f(set.resolutionLoc, width, height);
+    gl.uniform4f(set.colorLoc!, color[0], color[1], color[2], tickAlpha);
+    gl.uniform1f(set.hardnessLoc, hardness);
+
+    const radius = (size * point.pressure) / 2;
+    const verts  = buildDabVertices(
+      { ...point, timeStamp: 0 },  // StrokePoint requires timeStamp — unused by dab geometry
+      radius
+    );
+
+    const data = new Float32Array(verts);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+
+    const stride = 4 * Float32Array.BYTES_PER_ELEMENT;
+    gl.enableVertexAttribArray(set.positionLoc);
+    gl.vertexAttribPointer(set.positionLoc, 2, gl.FLOAT, false, stride, 0);
     gl.enableVertexAttribArray(set.localPosLoc);
     gl.vertexAttribPointer(set.localPosLoc, 2, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
 

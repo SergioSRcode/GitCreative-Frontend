@@ -17,6 +17,8 @@ import { LayerPanel } from './LayerPanel';
 import { VerticalBar } from './VerticalBar';
 import { BrushPreview } from './BrushPreview';
 import { floodFill } from '../utils/fill';
+import type { AirbrushVariant } from '../types/brush';
+import { AIRBRUSH_VARIANTS } from '../types/brush';
 
 const MAX_RECENT = 10;
 
@@ -28,6 +30,8 @@ export function Canvas() {
   const isDrawing = useRef(false);
   const currentPoints = useRef<StrokePoint[]>([]);
   const initializedRef = useRef(false);
+  const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
+  const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
@@ -39,7 +43,7 @@ export function Canvas() {
   const [tool, setTool] = useState<Tool>('ink');
   const [fillTolerance, setFillTolerance] = useState(32);  // range is 0-255
   const [brushOpacity, setBrushOpacity] = useState(1.0);
-
+  const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
 
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
@@ -58,6 +62,34 @@ export function Canvas() {
       opacity: brushOpacity,
       color:   [rgb.r, rgb.g, rgb.b],
     };
+
+  const HARDNESS_BY_VARIANT: Record<AirbrushVariant, number> = {
+    soft:   0.0,
+    medium: 0.5,
+    hard:   1.0,
+  };
+
+  function airbrushTick() {
+    const gl = glRef.current;
+    if (!gl || !activeLayer || !lastPointerPos.current || !brush) return;
+
+    // Asymptotic approach toward full deposit — each tick adds a fraction
+    // of brushOpacity, scaled down so repeated ticks approach but never
+    // instantly reach full saturation. 0.15 controls how quickly it builds.
+    const tickAlpha = brushOpacity * 0.15;
+
+    rendererRef.current!.renderAirbrushTick(
+      lastPointerPos.current,
+      HARDNESS_BY_VARIANT[airbrushVariant],
+      tickAlpha,
+      brush.color,
+      brush.size,
+      activeLayer.framebuffer,
+      gl.canvas.width, gl.canvas.height
+    );
+
+    compositeToScreen();
+  }
 
   function resizeCanvas(canvas: HTMLCanvasElement) {
     const dpr = window.devicePixelRatio || 1;
@@ -163,14 +195,30 @@ export function Canvas() {
     }
 
     canvasRef.current!.setPointerCapture(e.pointerId);
-    isDrawing.current     = true;
-    currentPoints.current = [getPoint(e)];
+    isDrawing.current = true;
 
+    if (tool === 'airbrush') {
+      const point = getPoint(e);
+      lastPointerPos.current = { x: point.x, y: point.y, pressure: point.pressure };
+      pushRecentColor(rgb);
+
+      airbrushTick();
+      airbrushTimer.current = setInterval(airbrushTick, 40);  // around 25 ticks/sec
+      return;
+    }
+
+    currentPoints.current = [getPoint(e)];
     pushRecentColor(rgb);
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!isDrawing.current) return;
+
+    if (tool === 'airbrush') {
+      const point = getPoint(e);
+      lastPointerPos.current = { x: point.x, y: point.y, pressure: point.pressure };
+      return;  // interval timer handles actual rendering, not pointer move
+    }
 
     currentPoints.current.push(getPoint(e));
     renderCurrentStrokeToLayer();
@@ -179,8 +227,21 @@ export function Canvas() {
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!isDrawing.current) return;
-
     isDrawing.current = false;
+
+    if (tool === 'airbrush') {
+      if (airbrushTimer.current) {
+        clearInterval(airbrushTimer.current);
+        airbrushTimer.current = null;
+      }
+
+      lastPointerPos.current = null;
+
+      const gl = glRef.current!;
+      pushSnapshot(gl, layersRef.current);
+      return;
+    }
+
     currentPoints.current.push(getPoint(e));
     renderCurrentStrokeToLayer();
     currentPoints.current = [];
@@ -309,6 +370,7 @@ export function Canvas() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
+      if (airbrushTimer.current) clearInterval(airbrushTimer.current);
     }
   }, []); 
 
@@ -359,9 +421,9 @@ export function Canvas() {
           >↪ Redo</button>
         </div>
 
-        {/* Tool selector — now includes Fill */}
+        {/* Tool selector*/}
         <div style={{ display: 'flex', gap: 6 }}>
-          {(['pencil', 'ink', 'eraser', 'fill'] as Tool[]).map(t => (
+          {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => (
             <button
               key={t}
               onClick={() => { setTool(t); setEyedropper(false) }}
@@ -370,7 +432,7 @@ export function Canvas() {
                 border: '1px solid #ddd',
                 background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
                 fontWeight: tool === t && !eyedropper ? 600 : 400,
-                cursor: 'pointer', fontSize: 13,
+                cursor: 'pointer', fontSize: 12,
               }}
             >{t}</button>
           ))}
@@ -422,6 +484,23 @@ export function Canvas() {
                 {fillTolerance}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Airbrush variant dropdown => shows only when airbrush is active */}
+        {tool === 'airbrush' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 11, color: '#888' }}>Airbrush type</span>
+            <select
+              value={airbrushVariant}
+              onChange={e => setAirbrushVariant(e.target.value as AirbrushVariant)}
+              title="Airbrush hardness"
+              style={{ fontSize: 12, border: '1px solid #ddd', borderRadius: 4, padding: '3px 4px' }}
+            >
+              {AIRBRUSH_VARIANTS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
           </div>
         )}
 
