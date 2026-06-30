@@ -30,8 +30,9 @@ export function Canvas() {
   const isDrawing = useRef(false);
   const currentPoints = useRef<StrokePoint[]>([]);
   const initializedRef = useRef(false);
-  const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
+  // const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
 
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
@@ -71,23 +72,29 @@ export function Canvas() {
 
   function airbrushTick() {
     const gl = glRef.current;
-    if (!gl || !activeLayer || !lastPointerPos.current || !brush) return;
+    if (!gl || !activeLayer || !brush) return;
+
+    const points = airbrushPathPoints.current;
+    if (points.length === 0) return;
 
     // Asymptotic approach toward full deposit — each tick adds a fraction
     // of brushOpacity, scaled down so repeated ticks approach but never
     // instantly reach full saturation. 0.15 controls how quickly it builds.
-    const tickAlpha = brushOpacity * 0.15;
+    const tickAlpha = brushOpacity * 1.15;
+    for (const point of points) {
+      rendererRef.current!.renderAirbrushTick(
+        point,
+        HARDNESS_BY_VARIANT[airbrushVariant],
+        tickAlpha,
+        brush.color,
+        brush.size,
+        activeLayer.framebuffer,
+        gl.canvas.width, gl.canvas.height
+      );
+    }
 
-    rendererRef.current!.renderAirbrushTick(
-      lastPointerPos.current,
-      HARDNESS_BY_VARIANT[airbrushVariant],
-      tickAlpha,
-      brush.color,
-      brush.size,
-      activeLayer.framebuffer,
-      gl.canvas.width, gl.canvas.height
-    );
-
+    // keeps only the most recent point = still position
+    airbrushPathPoints.current = [points[points.length - 1]];
     compositeToScreen();
   }
 
@@ -199,7 +206,7 @@ export function Canvas() {
 
     if (tool === 'airbrush') {
       const point = getPoint(e);
-      lastPointerPos.current = { x: point.x, y: point.y, pressure: point.pressure };
+      airbrushPathPoints.current = [{ x: point.x, y: point.y, pressure: point.pressure }];
       pushRecentColor(rgb);
 
       airbrushTick();
@@ -216,7 +223,7 @@ export function Canvas() {
 
     if (tool === 'airbrush') {
       const point = getPoint(e);
-      lastPointerPos.current = { x: point.x, y: point.y, pressure: point.pressure };
+      airbrushPathPoints.current.push({ x: point.x, y: point.y, pressure: point.pressure });
       return;  // interval timer handles actual rendering, not pointer move
     }
 
@@ -235,7 +242,7 @@ export function Canvas() {
         airbrushTimer.current = null;
       }
 
-      lastPointerPos.current = null;
+      airbrushPathPoints.current = [];
 
       const gl = glRef.current!;
       pushSnapshot(gl, layersRef.current);
