@@ -92,11 +92,6 @@ export function Canvas() {
     gl.clearColor(1, 1, 1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.disable(gl.BLEND);
-    // gl.enable(gl.BLEND);
-    // gl.blendFuncSeparate(
-    //   gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
-    //   gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
-    // );
 
     for (const layer of layersRef.current) {
       if (!layer.visible) continue;
@@ -371,20 +366,52 @@ export function Canvas() {
           ))}
         </div>
 
-        {/* Fill tolerance slider — only visible while Fill tool is active.
-            Stays visible as long as tool === 'fill', since tool only changes
-            on explicit user action, never automatically */}
+        {/* Fill tolerance slider — only visible while Fill tool is active */}
         {tool === 'fill' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#888' }}>Tolerance</span>
-            <input
-              type="range" min={0} max={255} step={1}
-              value={fillTolerance}
-              onChange={e => setFillTolerance(parseInt(e.target.value))}
-              aria-label="Fill tolerance"
-              style={{ flex: 1 }}
-            />
-            <span style={{ fontSize: 11, color: '#888', minWidth: 28 }}>{fillTolerance}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 11, color: '#888' }}>Fill tolerance</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                onClick={() => setFillTolerance(t => Math.max(0, t - 1))}
+                aria-label="Decrease tolerance by 1"
+                style={{
+                  width: 18, height: 18, borderRadius: 4,
+                  border: '1px solid #ddd', background: 'white',
+                  cursor: 'pointer', fontSize: 11, lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, padding: 0,
+                }}
+              >−</button>
+
+              <input
+                type="range" min={0} max={255} step={1}
+                value={fillTolerance}
+                onChange={e => setFillTolerance(parseInt(e.target.value))}
+                aria-label="Fill tolerance"
+                style={{ flex: 1, minWidth: 0 }}
+              />
+
+              <button
+                onClick={() => setFillTolerance(t => Math.min(255, t + 1))}
+                aria-label="Increase tolerance by 1"
+                style={{
+                  width: 18, height: 18, borderRadius: 4,
+                  border: '1px solid #ddd', background: 'white',
+                  cursor: 'pointer', fontSize: 11, lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, padding: 0,
+                }}
+              >+</button>
+
+              <span style={{
+                fontSize: 11, color: '#888',
+                width: 26, flexShrink: 0,
+                textAlign: 'right',
+              }}>
+                {fillTolerance}
+              </span>
+            </div>
           </div>
         )}
 
