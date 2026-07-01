@@ -73,13 +73,14 @@ export function Canvas() {
   };
 
   function airbrushTick() {
+    console.log('brush.size', brush!.size, 'dpr', window.devicePixelRatio, 'physical', physicalBrushSize);
     const gl = glRef.current;
     if (!gl || !activeLayer || !brush) return;
 
     const points = airbrushPathPoints.current;
     if (points.length === 0) return;
 
-    const tickAlpha = brushOpacity * 0.50;
+    const tickAlpha = brushOpacity * 0.15;
 
     // converts accumulated path points to StrokePoints so resample() can use them
     const strokePoints = points.map(p => ({
@@ -168,13 +169,14 @@ export function Canvas() {
     const spacing   = Math.max(brush.size * 0.15, 1);
     const resampled = resample(currentPoints.current, spacing);
     const smoothed  = smooth(resampled, 1);
+    const avgPressure = smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
 
     const stroke: Stroke = {
       id: 'current',
       points: smoothed,
       color: brush.color,
       size: brush.size,
-      opacity: brush.opacity,
+      opacity: brush.opacity * avgPressure,
     };
 
     rendererRef.current!.render(

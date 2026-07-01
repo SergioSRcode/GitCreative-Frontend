@@ -122,7 +122,7 @@ export class BrushRenderer {
     const allVerts: number[] = [];
 
     for (const point of stroke.points) {
-      const radius = (brush.size * point.pressure) / 2;
+      const radius = brush.size / 2;
       allVerts.push(...buildDabVertices(point, radius));
     }
 
@@ -168,7 +168,7 @@ export class BrushRenderer {
     gl.uniform4f(set.colorLoc!, color[0], color[1], color[2], tickAlpha);
     gl.uniform1f(set.hardnessLoc, hardness);
 
-    const radius = (size * point.pressure) / 2;
+    const radius = size / 2;
     const verts  = buildDabVertices(
       { ...point, timeStamp: 0 },  // StrokePoint requires timeStamp — unused by dab geometry
       radius
