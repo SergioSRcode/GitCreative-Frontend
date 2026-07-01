@@ -46,6 +46,8 @@ export function Canvas() {
   const [brushOpacity, setBrushOpacity] = useState(1.0);
   const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
 
+  const dpr = window.devicePixelRatio || 1;
+  const physicalBrushSize = brushSize * dpr;
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
     init, addLayer, deleteLayer, moveLayer,
@@ -59,7 +61,7 @@ export function Canvas() {
     ? null
     : {
       type:    tool,
-      size:    brushSize,
+      size:    physicalBrushSize,
       opacity: brushOpacity,
       color:   [rgb.r, rgb.g, rgb.b],
     };
@@ -77,9 +79,6 @@ export function Canvas() {
     const points = airbrushPathPoints.current;
     if (points.length === 0) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const physicalSize = brush.size * dpr;  // converts to phys. pixels
-
     const tickAlpha = brushOpacity * 0.50;
 
     // converts accumulated path points to StrokePoints so resample() can use them
@@ -91,7 +90,7 @@ export function Canvas() {
 
     // resamples at a spacing relative to brush size
     // smaller than other brushes bc. airbrush dabs are soft-edged and need more overlap
-    const spacing = Math.max(physicalSize * 0.08, 1);
+    const spacing = Math.max(brush.size * 0.08, 1);
     const densePath = strokePoints.length > 1
       ? resample(strokePoints, spacing)
       : strokePoints;  // single point (holding still) => no resampling
@@ -102,7 +101,7 @@ export function Canvas() {
         HARDNESS_BY_VARIANT[airbrushVariant],
         tickAlpha,
         brush.color,
-        physicalSize,
+        brush.size,
         activeLayer.framebuffer,
         gl.canvas.width, gl.canvas.height
       );
@@ -612,7 +611,7 @@ export function Canvas() {
 
       {/* Brush size preview — centred on canvas, visible while interacting */}
       <BrushPreview
-        size={brushSize}
+        size={physicalBrushSize}
         visible={sizeBarActive}
         canvasWidth={canvasPixelSize.width}
         canvasHeight={canvasPixelSize.height}
