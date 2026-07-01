@@ -88,8 +88,68 @@ export function serialiseDocument(
   return new Blob([buffer], { type: 'application/octet-stream' });
 }
 
+export type DeserialisedDocument = {
+  metadata: DocumentMetadata,
+  layerPixels: Map<string, Uint8Array>,  // keyed by layer id
+};
+
+// parses a binary .gitcreative file back into metadata + pixel data
+export function deserialisedDocument(buffer: ArrayBuffer): DeserialisedDocument {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = 0;
+
+  // verifies magic num
+  const magic = bytes.slice(0, 4);
+  if (magic[0] !== 0x47 || magic[1] !== 0x49 || magic[2] !== 0x54 || magic[3] !== 0x43) {
+    throw new Error('Invalid GitCreative file - magic number mismatch');
+  }
+  offset += 4;
+
+  // version check
+  const version = view.getUint32(offset, true);
+  offset += 4;
+  if (version !== VERSION) {
+    throw new Error(`Unsupported document version: ${version}. Expected ${VERSION}`);
+  }
+
+  // json metadata
+  const jsonLength = view.getUint32(offset, true);
+  offset += 4;
+  const jsonBytes = bytes.slice(offset, offset + jsonLength);
+  const jsonStr = new TextDecoder().decode(jsonBytes);
+  const metadata = JSON.parse(jsonStr) as DocumentMetadata;
+  offset += jsonLength;
+
+  // layer pixel data
+  const layerCount = view.getUint32(offset, true);
+  offset += 4;
+
+  const layerPixels = new Map<string, Uint8Array>();
+
+  for (let i = 0; i < layerCount; i++) {
+    const layerIndex = view.getUint32(offset, true);
+    offset += 4;
+
+    const pixelLength = view.getUint32(offset, true);
+    offset += 4;
+
+    const pixels = bytes.slice(offset, offset + pixelLength);
+    offset += pixelLength;
+
+    // maps by layer id using the idx to look up the corresponding meta data
+    const layerMeta = metadata.layers.find(l => l.index === layerIndex);
+    if (layerMeta) {
+      layerPixels.set(layerMeta.id, pixels);
+    }
+  }
+
+  return { metadata, layerPixels };
+}
+
+
 /*
-NOTES:
+NOTES to serialisation:
 
 - DataView allows writing multi-byte integers (setUint32) at specific byte offsets with explicit endiannes control
 - Uint8Array allows to set raw byte arrays (i.e. JSON and pixel data) at specific offsets
