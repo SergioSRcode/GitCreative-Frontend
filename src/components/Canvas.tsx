@@ -77,6 +77,11 @@ export function Canvas() {
     const points = airbrushPathPoints.current;
     if (points.length === 0) return;
 
+    const dpr = window.devicePixelRatio || 1;
+    const physicalSize = brush.size * dpr;  // converts to phys. pixels
+
+    const tickAlpha = brushOpacity * 0.50;
+
     // converts accumulated path points to StrokePoints so resample() can use them
     const strokePoints = points.map(p => ({
       x: p.x, y: p.y,
@@ -86,12 +91,10 @@ export function Canvas() {
 
     // resamples at a spacing relative to brush size
     // smaller than other brushes bc. airbrush dabs are soft-edged and need more overlap
-    const spacing = Math.max(brush.size * 0.08, 1);
+    const spacing = Math.max(physicalSize * 0.08, 1);
     const densePath = strokePoints.length > 1
       ? resample(strokePoints, spacing)
       : strokePoints;  // single point (holding still) => no resampling
-
-    const tickAlpha = brushOpacity * Math.max(0.03, 0.50 / Math.max(densePath.length, 1))
       
     for (const point of densePath) {
       rendererRef.current!.renderAirbrushTick(
@@ -99,7 +102,7 @@ export function Canvas() {
         HARDNESS_BY_VARIANT[airbrushVariant],
         tickAlpha,
         brush.color,
-        brush.size,
+        physicalSize,
         activeLayer.framebuffer,
         gl.canvas.width, gl.canvas.height
       );
