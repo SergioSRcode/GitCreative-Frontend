@@ -5,7 +5,7 @@ const MAGIC = new Uint8Array([0x47, 0x49, 0x54, 0x43]);  // "GITC"
 const VERSION = 1;
 
 export function serialiseDocument(
-  metadata: Omit<DocumentMetadata, 'version' | 'layers'> & { name: string },
+  metadata: { name: string; activeLayerId: string | null },
   layers: Layer[],
   gl: WebGL2RenderingContext
 ): Blob {
@@ -32,6 +32,7 @@ export function serialiseDocument(
 
   const jsonStr = JSON.stringify(doc);
   const jsonBytes = new TextEncoder().encode(jsonStr);
+  gl.finish();
 
   // reads pixel data for each layer
   const layerPixels: Uint8Array[] = layers.map(layer => {
@@ -94,7 +95,7 @@ export type DeserialisedDocument = {
 };
 
 // parses a binary .gitcreative file back into metadata + pixel data
-export function deserialisedDocument(buffer: ArrayBuffer): DeserialisedDocument {
+export function deserialiseDocument(buffer: ArrayBuffer): DeserialisedDocument {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
   let offset = 0;

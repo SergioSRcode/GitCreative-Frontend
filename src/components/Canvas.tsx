@@ -19,6 +19,7 @@ import { BrushPreview } from './BrushPreview';
 import { floodFill } from '../utils/fill';
 import type { AirbrushVariant } from '../types/brush';
 import { AIRBRUSH_VARIANTS } from '../types/brush';
+import { serialiseDocument, deserialiseDocument } from '../utils/document';
 
 const MAX_RECENT = 10;
 
@@ -45,6 +46,7 @@ export function Canvas() {
   const [fillTolerance, setFillTolerance] = useState(32);  // range is 0-255
   const [brushOpacity, setBrushOpacity] = useState(1.0);
   const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
+  const [projectName, setProjectName] = useState('Untitled');
 
   const dpr = window.devicePixelRatio || 1;
   const physicalBrushSize = brushSize * dpr;
@@ -342,6 +344,62 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);
   }
 
+  function handleSave() {
+    const gl = glRef.current!;
+    const blob = serialiseDocument(
+      { name: projectName, activeLayerId },
+      layersRef.current,
+      gl
+    );
+
+    // triggers download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectName}.gitcreative`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleLoad(file: File) {
+    const gl = glRef.current!;
+    const buffer = await file.arrayBuffer();
+
+    let doc: ReturnType<typeof deserialiseDocument>;
+
+    try {
+      doc = deserialiseDocument(buffer);
+    } catch (err) {
+      console.error('Failed to load document:', err);
+      return;
+    }
+
+    const { metadata, layerPixels } = doc;
+
+    // rebuilds layers from saved metadata
+    // for each layer, finds matching current layer or creates a new one
+    init(gl, metadata.width, metadata.height);
+
+    for (const layerMeta of metadata.layers) {
+      const pixels = layerPixels.get(layerMeta.id);
+      const layer = layersRef.current.find(l => l.id === layerMeta.id);
+      if (!pixels || !layer) continue;
+
+      gl.bindTexture(gl.TEXTURE_2D, layer.texture);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, 0,
+        metadata.width, metadata.height,
+        gl.RGBA, gl.UNSIGNED_BYTE,
+        pixels
+      );
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    setProjectName(metadata.name);
+    compositeToScreen();
+    pushSnapshot(gl, layersRef.current);
+  }
+
   useEffect(() => {
     // guards agains React strict mode double-invocation in development
     if (initializedRef.current) return;
@@ -415,6 +473,49 @@ export function Canvas() {
         boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         width: 244,
       }}>
+        {/* Project name */}
+        <input
+          value={projectName}
+          onChange={e => setProjectName(e.target.value)}
+          aria-label="Project name"
+          style={{
+            border: 'none', borderBottom: '1px solid #ddd',
+            fontSize: 13, fontWeight: 500,
+            width: '100%', padding: '2px 0',
+            outline: 'none', background: 'transparent',
+          }}
+        />
+
+        {/* Save / Load */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={handleSave}
+            style={{
+              flex: 1, padding: '4px 0', borderRadius: 6,
+              border: '1px solid #ddd', background: 'white',
+              cursor: 'pointer', fontSize: 13,
+            }}
+          >💾 Save</button>
+
+          <label style={{
+            flex: 1, padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+            textAlign: 'center',
+          }}>
+            📂 Load
+            <input
+              type="file"
+              accept=".gitcreative"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) handleLoad(file)
+                e.target.value = ''  // reset so re-loading the same file works
+              }}
+            />
+          </label>
+        </div>
 
         {/* Undo / Redo */}
         <div style={{ display: 'flex', gap: 6 }}>
