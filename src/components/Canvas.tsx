@@ -77,11 +77,23 @@ export function Canvas() {
     const points = airbrushPathPoints.current;
     if (points.length === 0) return;
 
-    // Asymptotic approach toward full deposit — each tick adds a fraction
-    // of brushOpacity, scaled down so repeated ticks approach but never
-    // instantly reach full saturation. 0.15 controls how quickly it builds.
-    const tickAlpha = brushOpacity * 1.15;
-    for (const point of points) {
+    // converts accumulated path points to StrokePoints so resample() can use them
+    const strokePoints = points.map(p => ({
+      x: p.x, y: p.y,
+      pressure: p.pressure,
+      timeStamp: 0,
+    }));
+
+    // resamples at a spacing relative to brush size
+    // smaller than other brushes bc. airbrush dabs are soft-edged and need more overlap
+    const spacing = Math.max(brush.size * 0.08, 1);
+    const densePath = strokePoints.length > 1
+      ? resample(strokePoints, spacing)
+      : strokePoints;  // single point (holding still) => no resampling
+
+    const tickAlpha = brushOpacity * Math.max(0.03, 0.50 / Math.max(densePath.length, 1))
+      
+    for (const point of densePath) {
       rendererRef.current!.renderAirbrushTick(
         point,
         HARDNESS_BY_VARIANT[airbrushVariant],
