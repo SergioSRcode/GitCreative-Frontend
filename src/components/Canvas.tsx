@@ -20,6 +20,12 @@ import { floodFill } from '../utils/fill';
 import type { AirbrushVariant } from '../types/brush';
 import { AIRBRUSH_VARIANTS } from '../types/brush';
 import { serialiseDocument, deserialiseDocument } from '../utils/document';
+import {
+  createProject, createCommit,
+  listCommits, fetchSnapshot,
+  type CommitSummary,
+} from '../api/projects';
+import { serialiseDocument, deserialiseDocument } from '../utils/document';
 
 const MAX_RECENT = 10;
 
@@ -47,6 +53,13 @@ export function Canvas() {
   const [brushOpacity, setBrushOpacity] = useState(1.0);
   const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
   const [projectName, setProjectName] = useState('Untitled');
+  const [projectId,     setProjectId]     = useState<string | null>(null);
+  const [branchId,      setBranchId]      = useState<string | null>(null);
+  const [headCommitId,  setHeadCommitId]  = useState<string | null>(null);
+  const [commits,       setCommits]       = useState<CommitSummary[]>([]);
+  const [showCommits,   setShowCommits]   = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [committing,    setCommitting]    = useState(false);
 
   const dpr = window.devicePixelRatio || 1;
   const physicalBrushSize = brushSize * dpr;
@@ -394,6 +407,79 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);
   }
 
+  async function handleCommit() {
+    if (!projectId || !branchId || !commitMessage.trim()) return;
+    setCommitting(true);
+
+    try {
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      // serialises current canvas state as a .gitcreative blob
+      const blob = serialiseDocument(
+        { name: projectName, activeLayerId },
+        layersRef.current,
+        gl
+      );
+
+      const { commitId } = await createCommit(
+        projectId,
+        branchId, 
+        headCommitId,  // parent is current HEAD - null for first commit
+        commitMessage.trim(),
+        blob
+      );
+
+      // updates HEAD to point to new commit
+      setHeadCommitId(commitId);
+      setCommitMessage('');
+
+      // refreshes commit list
+      const { commits: updated } = await listCommits(projectId);
+      setCommits(updated);
+    } catch (err) {
+      console.error('Commit failed: ', err);
+    } finally {
+      setCommitting(false);
+    }
+  }
+
+  async function handleRestoreCommit(commit: CommitSummary) {
+    if (!projectId) return;
+
+    try {
+      const buffer = await fetchSnapshot(projectId, commit.id);
+      const doc = deserialiseDocument(buffer);
+
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      canvas.width = doc.metadata.width;
+      canvas.height = doc.metadata.height;
+      gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+      setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+
+      loadLayers(gl, doc.metadata, doc.layerPixels);
+      setProjectName(doc.metadata.name);
+
+      // HEAD moves to the restored commit
+      setHeadCommitId(commit.id);
+
+      compositeToScreen();
+      pushSnapshot(gl, layersRef.current);
+    } catch (err) {
+      console.error('Restore failed: ', err);
+    }
+  }
+
+  async function handleToggleCommits() {
+    setShowCommits(s => !s);
+    if (!showCommits && projectId) {
+      const { commits: loaded } = await listCommits(projectId);
+      setCommits(loaded);
+    }
+  }
+
   useEffect(() => {
     // guards agains React strict mode double-invocation in development
     if (initializedRef.current) return;
@@ -413,6 +499,15 @@ export function Canvas() {
     init(gl, canvas.width, canvas.height);
 
     pushSnapshot(gl, layersRef.current);
+    // creates backend project - will soon be replaced by a project picker
+    // const canvas = canvasRef.current!;
+    createProject(projectName, canvas.width, canvas.height)
+      .then(({ projectId: pid, branchId: bid }) => {
+        setProjectId(pid);
+        setBranchId(bid);
+      })
+      .catch(err => console.error('Failed to create project: ', err));
+
     compositeToScreen();
 
     function handleKeyDown(e: KeyboardEvent) {
