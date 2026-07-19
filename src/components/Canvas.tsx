@@ -25,7 +25,7 @@ import {
   listCommits, fetchSnapshot,
   type CommitSummary,
 } from '../api/projects';
-import { serialiseDocument, deserialiseDocument } from '../utils/document';
+import { CommitPanel } from './CommitPanel';
 
 const MAX_RECENT = 10;
 
@@ -413,7 +413,7 @@ export function Canvas() {
 
     try {
       const gl = glRef.current!;
-      const canvas = canvasRef.current!;
+      // const canvas = canvasRef.current!;
 
       // serialises current canvas state as a .gitcreative blob
       const blob = serialiseDocument(
@@ -754,6 +754,18 @@ export function Canvas() {
           </>
         )}
 
+        {/* Commits toggle */}
+        <button
+          onClick={handleToggleCommits}
+          style={{
+            padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+          }}
+        >
+          {showCommits ? 'Hide commits' : '📋 Commits'}
+        </button>
+
         {/* Export */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['png', 'jpeg'] as ExportFormat[]).map(fmt => (
@@ -824,6 +836,19 @@ export function Canvas() {
         onRename={renameLayer}
         onClear={handleClearLayer}
       />
+
+      {/* Commit panel */}
+      {showCommits && (
+        <CommitPanel
+          commits={commits}
+          headCommitId={headCommitId}
+          commitMessage={commitMessage}
+          committing={committing}
+          onMessageChange={setCommitMessage}
+          onCommit={handleCommit}
+          onRestore={handleRestoreCommit}
+        />
+      )}
 
       {/* Canvas */}
       <canvas
