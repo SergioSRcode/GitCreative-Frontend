@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Layer, BlendMode } from "../types/layer";
 import { createLayer } from "../rendering/createLayer";
+import type { DocumentMetadata } from "../types/document";
 
 export function useLayers() {
   const glRef = useRef<WebGL2RenderingContext | null>(null);
@@ -124,6 +125,52 @@ export function useLayers() {
     syncDisplay();
   }
 
+  function loadLayers(
+    gl: WebGL2RenderingContext,
+    metadata: DocumentMetadata,
+    layerPixels: Map<string, Uint8Array>
+  ) {
+    glRef.current = gl;
+    const canvas = gl.canvas as HTMLCanvasElement;
+
+    // reconstructing layers in saved order (according to index)
+    const sortedMetas = [...metadata.layers].sort((a, b) => a.index - b.index);
+
+    const restoredLayers: Layer[] = sortedMetas.map(meta => {
+      // creates fresh GPU texture + framebuffer for curr layer
+      const layer = createLayer(gl, canvas.width, canvas.height, meta.name);
+
+      // overrides generated UUID with the saved one => allows the pixel data lookup to work
+      const restoredLayer: Layer = {
+        ...layer,
+        id: meta.id,
+        name: meta.name,
+        visible: meta.visible,
+        opacity: meta.opacity,
+        blendMode: meta.blendMode,
+      };
+
+      // writes saved pixel data into the layer texture
+      const pixels = layerPixels.get(meta.id);
+      if (pixels) {
+        gl.bindTexture(gl.TEXTURE_2D, restoredLayer.texture);
+        gl.texSubImage2D(
+          gl.TEXTURE_2D, 0, 0, 0,
+          canvas.width, canvas.height,
+          gl.RGBA, gl.UNSIGNED_BYTE,
+          pixels,
+        );
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      }
+
+      return restoredLayer;
+    });
+
+    layersRef.current = restoredLayers;
+    setActiveLayerId(metadata.activeLayerId ?? restoredLayers[restoredLayers.length - 1].id);
+    syncDisplay();
+  }
+
   return {
     layersRef,
     layersDisplay,
@@ -139,5 +186,6 @@ export function useLayers() {
     setBlendMode,
     renameLayer,
     clearLayer,
+    loadLayers,
   };
 }

@@ -53,7 +53,8 @@ export function Canvas() {
   const {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
     init, addLayer, deleteLayer, moveLayer,
-    setVisibility, setOpacity, setBlendMode, renameLayer, clearLayer,
+    setVisibility, setOpacity, setBlendMode, renameLayer, 
+    clearLayer, loadLayers,
   } = useLayers();
 
   const { pushSnapshot, undo, redo, canUndo, canRedo } = useHistory();
@@ -376,26 +377,19 @@ export function Canvas() {
 
     const { metadata, layerPixels } = doc;
 
-    // rebuilds layers from saved metadata
-    // for each layer, finds matching current layer or creates a new one
-    init(gl, metadata.width, metadata.height);
 
-    for (const layerMeta of metadata.layers) {
-      const pixels = layerPixels.get(layerMeta.id);
-      const layer = layersRef.current.find(l => l.id === layerMeta.id);
-      if (!pixels || !layer) continue;
+    // resizes the canvas to match the saved dimensions
+    const canvas = canvasRef.current!;
+    canvas.width = metadata.width;
+    canvas.height = metadata.height;
+    gl.viewport(0, 0, metadata.width, metadata.height);
+    setCanvasPixelSize({ width: metadata.width, height: metadata.height });
 
-      gl.bindTexture(gl.TEXTURE_2D, layer.texture);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, 0,
-        metadata.width, metadata.height,
-        gl.RGBA, gl.UNSIGNED_BYTE,
-        pixels
-      );
-      gl.bindTexture(gl.TEXTURE_2D, null);
-    }
-
+    // rebuilds layers from saved metadata + pixel data
+    loadLayers(gl, metadata, layerPixels);
+    
     setProjectName(metadata.name);
+
     compositeToScreen();
     pushSnapshot(gl, layersRef.current);
   }
