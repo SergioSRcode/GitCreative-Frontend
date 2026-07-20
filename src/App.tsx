@@ -1,13 +1,52 @@
-import { useState } from 'react'
-import { Canvas } from './components/Canvas'
+import { Routes, Route, Navigate } from "react-router-dom"
+import { Canvas } from "./components/Canvas"
+import { Gallery } from './components/Gallery'
+import { AuthPage } from './components/AuthPage'
 
-function App() {
-  return (
-    <>
-      <Canvas />
-  
-    </>
-  )
+function isAuthenticated(): boolean {
+  return !!localStorage.getItem('authToken');
 }
 
-export default App
+// redirects unauthenticated users to /auth
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  if (!isAuthenticated()) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+/*
+Three routes:
+
+/auth — login and register
+/gallery — project list (protected)
+/projects/:projectId — the canvas for a specific project (protected)
+
+ProtectedRoute checks for the auth token and redirects to /auth if missing.
+*/
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/auth" element={<AuthPage />} />
+
+      <Route path="/gallery" element={
+        <ProtectedRoute>
+          <Gallery />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/projects/:projectId" element={
+        <ProtectedRoute>
+          <Canvas />
+        </ProtectedRoute>
+      } />
+
+      {/* Default redirect */}
+      <Route path="*" element={
+        <Navigate to={isAuthenticated() ? '/gallery' : '/auth'} replace />
+      } />
+    </Routes>
+  );
+}

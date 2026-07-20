@@ -57,3 +57,7 @@ export async function fetchSnapshot(
 ): Promise<ArrayBuffer> {
   return apiClient.getBinary(`/projects/${projectId}/commits/${commitId}/snapshot`);
 }
+
+export async function deleteProject(projectId: string): Promise<void> {
+  return apiClient.del(`/projects/${projectId}`);
+}

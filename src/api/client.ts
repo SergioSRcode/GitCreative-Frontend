@@ -55,4 +55,13 @@ async function getBinary(path: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
-export const apiClient = { get, post, postBinary, getBinary };
+async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
+}
+
+export const apiClient = { get, post, postBinary, getBinary, del };

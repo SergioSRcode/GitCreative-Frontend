@@ -20,12 +20,10 @@ import { floodFill } from '../utils/fill';
 import type { AirbrushVariant } from '../types/brush';
 import { AIRBRUSH_VARIANTS } from '../types/brush';
 import { serialiseDocument, deserialiseDocument } from '../utils/document';
-import {
-  createProject, createCommit,
-  listCommits, fetchSnapshot,
-  type CommitSummary,
-} from '../api/projects';
+import { createCommit, listCommits, fetchSnapshot, type CommitSummary } from '../api/projects';
 import { CommitPanel } from './CommitPanel';
+import { useNavigate, useParams } from 'react-router-dom';
+import { apiClient } from '../api/client';
 
 const MAX_RECENT = 10;
 
@@ -41,6 +39,9 @@ export function Canvas() {
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
 
+  const { projectId: urlProjectId } = useParams();
+  const navigate = useNavigate();
+
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
   const [eyedropper, setEyedropper] = useState(false);
@@ -53,7 +54,7 @@ export function Canvas() {
   const [brushOpacity, setBrushOpacity] = useState(1.0);
   const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
   const [projectName, setProjectName] = useState('Untitled');
-  const [projectId,     setProjectId]     = useState<string | null>(null);
+  // const [projectId,     setProjectId]     = useState<string>(urlProjectId ?? '');
   const [branchId,      setBranchId]      = useState<string | null>(null);
   const [headCommitId,  setHeadCommitId]  = useState<string | null>(null);
   const [commits,       setCommits]       = useState<CommitSummary[]>([]);
@@ -61,6 +62,7 @@ export function Canvas() {
   const [commitMessage, setCommitMessage] = useState('');
   const [committing,    setCommitting]    = useState(false);
 
+  const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
   const physicalBrushSize = brushSize * dpr;
   const {
@@ -87,6 +89,46 @@ export function Canvas() {
     medium: 0.5,
     hard:   1.0,
   };
+
+  async function loadProject(pid: string) {
+    try {
+      // gets the main branch and its head commit
+      const { branches } = await apiClient.get<{
+        branches: { id: string; head_commit_id: string | null }[]
+      }>(`/projects/${pid}/branches`);
+
+      const mainBranch = branches[0];
+      if (!mainBranch) return;
+
+      setBranchId(mainBranch.id);
+
+      // loads commit history
+      const { commits: loadedCommits } = await listCommits(pid);
+      setCommits(loadedCommits);
+
+      if (mainBranch.head_commit_id) {
+        // restore latest commit
+        setHeadCommitId(mainBranch.head_commit_id);
+        const buffer = await fetchSnapshot(pid, mainBranch.head_commit_id);
+        const doc = deserialiseDocument(buffer);
+        const gl = glRef.current!;
+        const canvas = canvasRef.current!;
+
+        canvas.width = doc.metadata.width;
+        canvas.height = doc.metadata.height;
+        gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+        setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+
+        loadLayers(gl, doc.metadata, doc.layerPixels);
+        setProjectName(doc.metadata.name);
+        compositeToScreen();
+        pushSnapshot(gl, layersRef.current);
+      }
+      // if no commits exist yet => start with blank canvas
+    } catch (err) {
+      console.error('Failed to load project: ', err);
+    }
+  }
 
   function airbrushTick() {
     console.log('brush.size', brush!.size, 'dpr', window.devicePixelRatio, 'physical', physicalBrushSize);
@@ -495,21 +537,13 @@ export function Canvas() {
 
     resizeCanvas(canvas);
     setCanvasPixelSize({ width: canvas.width, height: canvas.height });
-    // init(glRef.current, canvas.width, canvas.height);
     init(gl, canvas.width, canvas.height);
-
     pushSnapshot(gl, layersRef.current);
-    // creates backend project - will soon be replaced by a project picker
-    // const canvas = canvasRef.current!;
-    createProject(projectName, canvas.width, canvas.height)
-      .then(({ projectId: pid, branchId: bid }) => {
-        setProjectId(pid);
-        setBranchId(bid);
-      })
-      .catch(err => console.error('Failed to create project: ', err));
-
     compositeToScreen();
 
+    // loads the project from the URL => restores latest commit if it exists
+    if (urlProjectId) loadProject(urlProjectId);
+  
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
@@ -562,6 +596,15 @@ export function Canvas() {
         boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         width: 244,
       }}>
+        {/* Back to Gallery button */}
+        <button
+          onClick={() => navigate('/gallery')}
+          style={{
+            padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+          }}
+        >← Gallery</button>
         {/* Project name */}
         <input
           value={projectName}
