@@ -89,6 +89,25 @@ export function serialiseDocument(
   return new Blob([buffer], { type: 'application/octet-stream' });
 }
 
+export async function serialiseDocumentCompressed(
+  metadata: { name: string; activeLayerId: string | null },
+  layers: Layer[],
+  gl: WebGL2RenderingContext
+): Promise<Blob> {
+  const raw = serialiseDocument(metadata, layers, gl);
+  const rawBuffer = await raw.arrayBuffer();
+
+  // Compresses using browser's built-in gzip
+  const stream = new CompressionStream('gzip');
+  const writer  = stream.writable.getWriter();
+  writer.write(rawBuffer);
+  writer.close();
+
+  const compressed = await new Response(stream.readable).arrayBuffer();
+
+  return new Blob([compressed], { type: 'application/octet-stream' });
+}
+
 export type DeserialisedDocument = {
   metadata: DocumentMetadata,
   layerPixels: Map<string, Uint8Array>,  // keyed by layer id
@@ -148,6 +167,27 @@ export function deserialiseDocument(buffer: ArrayBuffer): DeserialisedDocument {
   return { metadata, layerPixels };
 }
 
+export async function deserialiseDocumentCompressed(
+  buffer: ArrayBuffer
+): Promise<DeserialisedDocument> {
+  // Checks if data starts with gzip magic bytes (0x1f 0x8b)
+  const header = new Uint8Array(buffer, 0, 2)
+  const isGzip = header[0] === 0x1f && header[1] === 0x8b
+
+  if (!isGzip) {
+    // Legacy uncompressed snapshot — parses directly
+    return deserialiseDocument(buffer)
+  }
+
+  const stream      = new DecompressionStream('gzip');
+  const writer      = stream.writable.getWriter();
+  writer.write(buffer);
+  writer.close();
+
+  const decompressed = await new Response(stream.readable).arrayBuffer();
+
+  return deserialiseDocument(decompressed);
+}
 
 /*
 NOTES to serialisation:

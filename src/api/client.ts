@@ -64,4 +64,16 @@ async function del(path: string): Promise<void> {
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
 }
 
-export const apiClient = { get, post, postBinary, getBinary, del };
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method:  'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+
+  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+
+  return res.json();
+}
+
+export const apiClient = { get, post, patch, postBinary, getBinary, del };

@@ -15,6 +15,14 @@ export type Project = {
   height: number,
   created_at: string,
   updated_at: string,
+  main_branch_id: string,
+  last_active_branch_id: string | null,
+};
+
+export type Branch = {
+  id: string,
+  name: string,
+  head_commit_id: string | null,
 };
 
 export async function createProject(
@@ -60,4 +68,48 @@ export async function fetchSnapshot(
 
 export async function deleteProject(projectId: string): Promise<void> {
   return apiClient.del(`/projects/${projectId}`);
+}
+
+export async function listBranches(
+  projectId: string
+): Promise<{ branches: Branch[] }> {
+  return apiClient.get(`/projects/${projectId}/branches`);
+}
+
+export async function createBranch(
+  projectId: string,
+  name: string,
+  fromCommitId: string
+): Promise<{ branchId: string; name: string; headCommitId: string }> {
+  return apiClient.post(`/projects/${projectId}/branches`, { name, fromCommitId });
+}
+
+export async function deleteBranch(
+  projectId: string,
+  branchId: string
+): Promise<void> {
+  return apiClient.del(`/projects/${projectId}/branches/${branchId}`);
+}
+
+// Updates branch HEAD after a commit
+export async function updateBranchHead(
+  projectId: string,
+  branchId: string,
+  headCommitId: string
+): Promise<void> {
+  return apiClient.post(`/projects/${projectId}/branches/${branchId}/head`, { headCommitId });
+}
+
+export async function listBranchCommits(
+  projectId: string,
+  branchId:  string
+): Promise<{ commits: CommitSummary[] }> {
+  return apiClient.get(`/projects/${projectId}/branches/${branchId}/commits`);
+}
+
+export async function updateLastBranch(
+  projectId: string,
+  branchId:  string
+): Promise<void> {
+  await apiClient.patch(`/projects/${projectId}/lastBranch`, { branchId });
 }

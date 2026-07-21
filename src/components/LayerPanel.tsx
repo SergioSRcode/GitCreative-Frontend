@@ -28,16 +28,11 @@ export function LayerPanel({
 
   return (
     <div style={{
-      position: 'absolute', top: 10, right: 10, zIndex: 10,
-      background: 'white', border: '1px solid #ddd',
-      borderRadius: 10, padding: 12, width: 220,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
 
       {/* Panel header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Layers</span>
         <button
           onClick={onAdd}
           title="Add layer"

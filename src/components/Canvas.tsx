@@ -13,17 +13,25 @@ import { useLayers } from '../hooks/useLayers';
 import { useHistory } from '../hooks/useHistory';
 import { ColorPicker } from './ColorPicker';
 import { RecentColors } from './RecentColors';
-import { LayerPanel } from './LayerPanel';
+// import { LayerPanel } from './LayerPanel';
 import { VerticalBar } from './VerticalBar';
 import { BrushPreview } from './BrushPreview';
 import { floodFill } from '../utils/fill';
 import type { AirbrushVariant } from '../types/brush';
 import { AIRBRUSH_VARIANTS } from '../types/brush';
-import { serialiseDocument, deserialiseDocument } from '../utils/document';
-import { createCommit, listCommits, fetchSnapshot, type CommitSummary } from '../api/projects';
-import { CommitPanel } from './CommitPanel';
+import { serialiseDocument, deserialiseDocument, 
+  serialiseDocumentCompressed, deserialiseDocumentCompressed
+} from '../utils/document';
+import { createCommit, listCommits, listBranchCommits, fetchSnapshot,
+  listBranches, createBranch, deleteBranch, //updateBranchHead, 
+  type CommitSummary, type Branch, 
+} from '../api/projects';
+// import { CommitPanel } from './CommitPanel';
 import { useNavigate, useParams } from 'react-router-dom';
-import { apiClient } from '../api/client';
+// import { apiClient } from '../api/client';
+import { RightPanel } from './RightPanel';
+import { updateLastBranch } from '../api/projects';
+
 
 const MAX_RECENT = 10;
 
@@ -39,7 +47,8 @@ export function Canvas() {
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
 
-  const { projectId: urlProjectId } = useParams();
+  const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
+  console.log('useParams on mount:', { urlProjectId, urlBranchId });
   const navigate = useNavigate();
 
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
@@ -55,12 +64,17 @@ export function Canvas() {
   const [airbrushVariant, setAirbrushVariant] = useState<AirbrushVariant>('medium');
   const [projectName, setProjectName] = useState('Untitled');
   // const [projectId,     setProjectId]     = useState<string>(urlProjectId ?? '');
-  const [branchId,      setBranchId]      = useState<string | null>(null);
-  const [headCommitId,  setHeadCommitId]  = useState<string | null>(null);
-  const [commits,       setCommits]       = useState<CommitSummary[]>([]);
-  const [showCommits,   setShowCommits]   = useState(false);
+  const [branchId, setBranchId] = useState<string | null>(null);
+  const [headCommitId, setHeadCommitId] = useState<string | null>(null);
+  // const [commits, setCommits] = useState<CommitSummary[]>([]);
+  const [branchCommits, setBranchCommits] = useState<CommitSummary[]>([])  // commits tab
+  const [allCommits,    setAllCommits]    = useState<CommitSummary[]>([])   // tree tab
   const [commitMessage, setCommitMessage] = useState('');
-  const [committing,    setCommitting]    = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [isDetached, setIsDetached] = useState(false);
+  const [viewingCommitId, setViewingCommitId] = useState<string | null>(null);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -90,27 +104,40 @@ export function Canvas() {
     hard:   1.0,
   };
 
-  async function loadProject(pid: string) {
+  async function loadProject(pid: string, targetBranchId?: string) {
+    console.log('loadProject called with:', { pid, targetBranchId })
     try {
       // gets the main branch and its head commit
-      const { branches } = await apiClient.get<{
-        branches: { id: string; head_commit_id: string | null }[]
-      }>(`/projects/${pid}/branches`);
+      const { branches: loadedBranches } = await listBranches(pid);
+      setBranches(loadedBranches);
+      console.log('branches loaded:', loadedBranches.map(b => ({ id: b.id, name: b.name })))
+      console.log('looking for branch:', targetBranchId)
 
-      const mainBranch = branches[0];
-      if (!mainBranch) return;
+      // const mainBranch = loadedBranches[0];
+      const targetBranch = targetBranchId
+        ? loadedBranches.find(b => b.id === targetBranchId) ?? loadedBranches[0]
+        : loadedBranches[0];
 
-      setBranchId(mainBranch.id);
+      console.log('resolved targetBranch:', targetBranch?.name, targetBranch?.id)
+
+      if (!targetBranch) return;
+
+      setActiveBranchId(targetBranch.id);
+      setBranchId(targetBranch.id);
 
       // loads commit history
-      const { commits: loadedCommits } = await listCommits(pid);
-      setCommits(loadedCommits);
+      await refreshCommits(pid, targetBranch.id);
+      
+      // const { commits: loadedCommits } = await listCommits(pid);
+      // setCommits(loadedCommits);
 
-      if (mainBranch.head_commit_id) {
+      if (targetBranch.head_commit_id) {
         // restore latest commit
-        setHeadCommitId(mainBranch.head_commit_id);
-        const buffer = await fetchSnapshot(pid, mainBranch.head_commit_id);
-        const doc = deserialiseDocument(buffer);
+        setHeadCommitId(targetBranch.head_commit_id);
+        setViewingCommitId(targetBranch.head_commit_id);
+
+        const buffer = await fetchSnapshot(pid, targetBranch.head_commit_id);
+        const doc = await deserialiseDocumentCompressed(buffer);
         const gl = glRef.current!;
         const canvas = canvasRef.current!;
 
@@ -256,6 +283,9 @@ export function Canvas() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    // Blocks drawing in detached HEAD (view only) state
+    if (isDetached) return;
+
     if (eyedropper) {
       const gl     = glRef.current!;
       const canvas = canvasRef.current!;
@@ -330,6 +360,15 @@ export function Canvas() {
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
     const gl = glRef.current!;
     pushSnapshot(gl, layersRef.current);
+  }
+
+  async function refreshCommits(pid: string, bid: string) {
+    const [{ commits: branch }, { commits: all }] = await Promise.all([
+      listBranchCommits(pid, bid),
+      listCommits(pid),
+    ])
+    setBranchCommits(branch);
+    setAllCommits(all);
   }
 
   function handleUndo() {
@@ -451,6 +490,7 @@ export function Canvas() {
 
   async function handleCommit() {
     if (!projectId || !branchId || !commitMessage.trim()) return;
+    if (isDetached) return;  // safety guard - UI prevents this already
     setCommitting(true);
 
     try {
@@ -458,7 +498,7 @@ export function Canvas() {
       // const canvas = canvasRef.current!;
 
       // serialises current canvas state as a .gitcreative blob
-      const blob = serialiseDocument(
+      const blob = await serialiseDocumentCompressed(
         { name: projectName, activeLayerId },
         layersRef.current,
         gl
@@ -472,13 +512,16 @@ export function Canvas() {
         blob
       );
 
-      // updates HEAD to point to new commit
+      // updates HEAD
       setHeadCommitId(commitId);
+      setViewingCommitId(commitId);
       setCommitMessage('');
 
-      // refreshes commit list
-      const { commits: updated } = await listCommits(projectId);
-      setCommits(updated);
+      // refreshes branches and commit list
+      await refreshCommits(projectId, branchId);
+      const { branches: updatedBranches } = await listBranches(projectId);
+      // setCommits(updated);
+      setBranches(updatedBranches);
     } catch (err) {
       console.error('Commit failed: ', err);
     } finally {
@@ -491,8 +534,7 @@ export function Canvas() {
 
     try {
       const buffer = await fetchSnapshot(projectId, commit.id);
-      const doc = deserialiseDocument(buffer);
-
+      const doc = await deserialiseDocumentCompressed(buffer);
       const gl = glRef.current!;
       const canvas = canvasRef.current!;
 
@@ -504,8 +546,10 @@ export function Canvas() {
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
 
-      // HEAD moves to the restored commit
-      setHeadCommitId(commit.id);
+      // enters detached HEAD  - viewing a past state (not on top of a branch)
+      setViewingCommitId(commit.id);
+      setIsDetached(true);
+      // setHeadCommitId(commit.id);
 
       compositeToScreen();
       pushSnapshot(gl, layersRef.current);
@@ -514,11 +558,101 @@ export function Canvas() {
     }
   }
 
-  async function handleToggleCommits() {
-    setShowCommits(s => !s);
-    if (!showCommits && projectId) {
-      const { commits: loaded } = await listCommits(projectId);
-      setCommits(loaded);
+  // async function handleToggleCommits() {
+  //   setShowCommits(s => !s);
+  //   if (!showCommits && projectId) {
+  //     const { commits: loaded } = await listCommits(projectId);
+  //     setCommits(loaded);
+  //   }
+  // }
+
+  async function handleCheckout(branch: Branch) {
+    if (!projectId || !branch.head_commit_id) return;
+
+    try {
+      navigate(`/projects/${projectId}/branches/${branch.id}`);
+
+      const buffer = await fetchSnapshot(projectId, branch.head_commit_id);
+      const doc = await deserialiseDocumentCompressed(buffer);
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      canvas.width = doc.metadata.width;
+      canvas.height = doc.metadata.height;
+      gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+      setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+
+      loadLayers(gl, doc.metadata, doc.layerPixels);
+      setProjectName(doc.metadata.name);
+
+      // exits detached HEAD - now on a real branch
+      setActiveBranchId(branch.id);
+      setBranchId(branch.id);
+      setHeadCommitId(branch.head_commit_id);
+      setViewingCommitId(branch.head_commit_id);
+      setIsDetached(false);
+
+      // refreshes commits for curr branch
+      await refreshCommits(projectId, branch.id);
+      const { branches: updatedBranches } = await listBranches(projectId);
+      setBranches(updatedBranches);
+
+      await updateLastBranch(projectId, branch.id);
+
+      navigate(`/projects/${projectId}/branches/${branch.id}`);
+      compositeToScreen();
+      pushSnapshot(gl, layersRef.current);
+    } catch (err) {
+      console.error('Checkout failed: ', err);
+    }
+  }
+
+  async function handleCreateBranchFromCommit(commit: CommitSummary) {
+    if (!projectId) return;
+
+    const name = prompt('New branch name:');
+    if (!name?.trim()) return;
+
+    try {
+      const { branchId: newBranchId } = await createBranch(
+        projectId, name.trim(), commit.id
+      );
+
+      const newBranch: Branch = {
+        id: newBranchId,
+        name: name.trim(),
+        head_commit_id: commit.id,
+      };
+
+      setBranches(prev => [...prev, newBranch]);
+
+      // auto checkouts the new branch
+      setActiveBranchId(newBranchId);
+      setBranchId(newBranchId);
+      setHeadCommitId(commit.id);
+      // setViewingCommitId(commit.id);
+      setIsDetached(false);
+
+      await refreshCommits(projectId, newBranchId);
+      // refreshes commit list
+      // const { commits: updated } = await listCommits(projectId);
+      // setCommits(updated);
+
+      navigate(`/projects/${projectId}/branches/${newBranchId}`);
+      await updateLastBranch(projectId, newBranchId);
+    } catch (err) {
+      console.error('Create branch failed: ', err);
+    }
+  }
+
+  async function handleDeleteBranch(branch: Branch) {
+    if (!projectId) return;
+
+    try {
+      await deleteBranch(projectId, branch.id);
+      setBranches(prev => prev.filter(b => b.id !== branch.id));
+    } catch (err) {
+      console.error('Delete branch failed: ', err);
     }
   }
 
@@ -542,7 +676,7 @@ export function Canvas() {
     compositeToScreen();
 
     // loads the project from the URL => restores latest commit if it exists
-    if (urlProjectId) loadProject(urlProjectId);
+    if (urlProjectId) loadProject(urlProjectId, urlBranchId);
   
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
@@ -796,19 +930,6 @@ export function Canvas() {
             />
           </>
         )}
-
-        {/* Commits toggle */}
-        <button
-          onClick={handleToggleCommits}
-          style={{
-            padding: '4px 0', borderRadius: 6,
-            border: '1px solid #ddd', background: 'white',
-            cursor: 'pointer', fontSize: 13,
-          }}
-        >
-          {showCommits ? 'Hide commits' : '📋 Commits'}
-        </button>
-
         {/* Export */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['png', 'jpeg'] as ExportFormat[]).map(fmt => (
@@ -855,7 +976,6 @@ export function Canvas() {
         />
       </div>
       
-
       {/* Brush size preview — centred on canvas, visible while interacting */}
       <BrushPreview
         size={physicalBrushSize}
@@ -864,13 +984,15 @@ export function Canvas() {
         canvasHeight={canvasPixelSize.height}
       />
 
-      {/* Layer panel */}
-      <LayerPanel
+      {/* Tab panel: Layers, commits, branches */}
+      <RightPanel
+        // Layer props
+        viewingCommitId={viewingCommitId}
         layers={layersDisplay}
         activeLayerId={activeLayerId}
-        onSelect={setActiveLayerId}
-        onAdd={addLayer}
-        onDelete={deleteLayer}
+        onSelectLayer={setActiveLayerId}
+        onAddLayer={addLayer}
+        onDeleteLayer={deleteLayer}
         onMoveUp={id => moveLayer(id, 'up')}
         onMoveDown={id => moveLayer(id, 'down')}
         onVisibility={setVisibility}
@@ -878,20 +1000,25 @@ export function Canvas() {
         onBlendMode={setBlendMode}
         onRename={renameLayer}
         onClear={handleClearLayer}
-      />
 
-      {/* Commit panel */}
-      {showCommits && (
-        <CommitPanel
-          commits={commits}
-          headCommitId={headCommitId}
-          commitMessage={commitMessage}
-          committing={committing}
-          onMessageChange={setCommitMessage}
-          onCommit={handleCommit}
-          onRestore={handleRestoreCommit}
-        />
-      )}
+        // Commit props
+        branchCommits={branchCommits}
+        allCommits={allCommits}
+        headCommitId={headCommitId}
+        activeBranchId={activeBranchId}
+        commitMessage={commitMessage}
+        committing={committing}
+        isDetached={isDetached}
+        onCommitMessageChange={setCommitMessage}
+        onCommit={handleCommit}
+        onRestoreCommit={handleRestoreCommit}
+        onCreateBranchFromCommit={handleCreateBranchFromCommit}
+
+        // Branch props
+        branches={branches}
+        onCheckout={handleCheckout}
+        onDeleteBranch={handleDeleteBranch}
+      />
 
       {/* Canvas */}
       <canvas
@@ -907,5 +1034,5 @@ export function Canvas() {
         onPointerLeave={onPointerUp}
       />
     </>
-  )
+  );
 }

@@ -43,6 +43,12 @@ export default function App() {
         </ProtectedRoute>
       } />
 
+      <Route path="/projects/:projectId/branches/:branchId" element={
+        <ProtectedRoute>
+          <Canvas />
+        </ProtectedRoute>
+      } />
+
       {/* Default redirect */}
       <Route path="*" element={
         <Navigate to={isAuthenticated() ? '/gallery' : '/auth'} replace />

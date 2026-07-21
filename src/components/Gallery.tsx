@@ -35,8 +35,8 @@ export function Gallery() {
 
     try {
       // default canvas size - can be resized later
-      const { projectId } = await createProject(newName.trim(), 1920, 1080);
-      navigate(`/projects/${projectId}`);
+      const { projectId, branchId } = await createProject(newName.trim(), 1920, 1080);
+      navigate(`/projects/${projectId}/branches/${branchId}`);
     } catch (err) {
       console.error('Failed to create project: ', err);
     } finally {
@@ -160,7 +160,10 @@ export function Gallery() {
           {projects.map(project => (
             <div
               key={project.id}
-              onClick={() => navigate(`/projects/${project.id}`)}
+              onClick={() => {
+                const branchId = project.last_active_branch_id ?? project.main_branch_id;
+                navigate(`/projects/${project.id}/branches/${branchId}`)
+              }}
               style={{
                 background: 'white', borderRadius: 10, padding: 16,
                 cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
