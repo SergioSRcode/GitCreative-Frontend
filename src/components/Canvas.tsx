@@ -148,7 +148,7 @@ export function Canvas() {
         compositeToScreen();
         pushSnapshot(gl, layersRef.current);
       } catch {
-        // No snapshot exists yet — brand new branch, keeps the blank canvas from init()
+        // No snapshot exists yet — brand new branch, keep the blank canvas from init()
       }
       // if no commits exist yet => start with blank canvas
     } catch (err) {
@@ -438,7 +438,7 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);
   }
 
-  function handleSave() {
+  function handleProjectExport() {
     const gl = glRef.current!;
     const blob = serialiseDocument(
       { name: projectName, activeLayerId },
@@ -800,35 +800,16 @@ export function Canvas() {
           )}
         </button>
 
-        {/* Save / Load */}
+        {/* Export */}
         <div style={{ display: 'flex', gap: 6 }}>
           <button
-            onClick={handleSave}
+            onClick={handleProjectExport}
             style={{
               flex: 1, padding: '4px 0', borderRadius: 6,
               border: '1px solid #ddd', background: 'white',
               cursor: 'pointer', fontSize: 13,
             }}
-          >💾 Save</button>
-
-          <label style={{
-            flex: 1, padding: '4px 0', borderRadius: 6,
-            border: '1px solid #ddd', background: 'white',
-            cursor: 'pointer', fontSize: 13,
-            textAlign: 'center',
-          }}>
-            📂 Load
-            <input
-              type="file"
-              accept=".gitcreative"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const file = e.target.files?.[0]
-                if (file) handleLoad(file)
-                e.target.value = ''  // reset so re-loading the same file works
-              }}
-            />
-          </label>
+          >⬇ Export</button>
         </div>
 
         {/* Undo / Redo */}
