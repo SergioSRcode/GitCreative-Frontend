@@ -23,7 +23,8 @@ import { serialiseDocument, deserialiseDocument,
   serialiseDocumentCompressed, deserialiseDocumentCompressed
 } from '../utils/document';
 import { createCommit, listCommits, listBranchCommits, fetchSnapshot,
-  listBranches, createBranch, deleteBranch, //updateBranchHead, 
+  listBranches, createBranch, deleteBranch, 
+  quickSave, fetchCurrentState,
   type CommitSummary, type Branch, 
 } from '../api/projects';
 // import { CommitPanel } from './CommitPanel';
@@ -75,6 +76,8 @@ export function Canvas() {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [isDetached, setIsDetached] = useState(false);
   const [viewingCommitId, setViewingCommitId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -105,38 +108,25 @@ export function Canvas() {
   };
 
   async function loadProject(pid: string, targetBranchId?: string) {
-    console.log('loadProject called with:', { pid, targetBranchId })
     try {
       // gets the main branch and its head commit
       const { branches: loadedBranches } = await listBranches(pid);
       setBranches(loadedBranches);
-      console.log('branches loaded:', loadedBranches.map(b => ({ id: b.id, name: b.name })))
-      console.log('looking for branch:', targetBranchId)
 
-      // const mainBranch = loadedBranches[0];
       const targetBranch = targetBranchId
         ? loadedBranches.find(b => b.id === targetBranchId) ?? loadedBranches[0]
         : loadedBranches[0];
-
-      console.log('resolved targetBranch:', targetBranch?.name, targetBranch?.id)
 
       if (!targetBranch) return;
 
       setActiveBranchId(targetBranch.id);
       setBranchId(targetBranch.id);
 
-      // loads commit history
-      await refreshCommits(pid, targetBranch.id);
-      
-      // const { commits: loadedCommits } = await listCommits(pid);
-      // setCommits(loadedCommits);
+      await refreshCommits(pid, targetBranch.id);  // loads commit history
 
-      if (targetBranch.head_commit_id) {
-        // restore latest commit
-        setHeadCommitId(targetBranch.head_commit_id);
-        setViewingCommitId(targetBranch.head_commit_id);
-
-        const buffer = await fetchSnapshot(pid, targetBranch.head_commit_id);
+      // try current state (quick-save or HEAD commit) via unified enpoint
+      try {
+        const buffer = await fetchCurrentState(pid, targetBranch.id);
         const doc = await deserialiseDocumentCompressed(buffer);
         const gl = glRef.current!;
         const canvas = canvasRef.current!;
@@ -148,8 +138,17 @@ export function Canvas() {
 
         loadLayers(gl, doc.metadata, doc.layerPixels);
         setProjectName(doc.metadata.name);
+
+        if (targetBranch.head_commit_id) {
+        // restore latest commit
+          setHeadCommitId(targetBranch.head_commit_id);
+          setViewingCommitId(targetBranch.head_commit_id);
+        }
+
         compositeToScreen();
         pushSnapshot(gl, layersRef.current);
+      } catch {
+        // No snapshot exists yet — brand new branch, keeps the blank canvas from init()
       }
       // if no commits exist yet => start with blank canvas
     } catch (err) {
@@ -656,6 +655,27 @@ export function Canvas() {
     }
   }
 
+  async function handleQuickSave() {
+    if (!projectId || !activeBranchId || isDetached) return;
+    setSaving(true);
+
+    try {
+      const gl = glRef.current!;
+      const blob = await serialiseDocumentCompressed(
+        { name: projectName, activeLayerId},
+        layersRef.current,
+        gl  
+      );
+
+      await quickSave(projectId, activeBranchId, blob);
+      setLastSavedAt(new Date());
+    } catch (err) {
+      console.error('Quick save failed: ', err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   useEffect(() => {
     // guards agains React strict mode double-invocation in development
     if (initializedRef.current) return;
@@ -681,6 +701,13 @@ export function Canvas() {
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      if (cmdOrCtrl && e.key === 's') {
+        e.preventDefault();
+
+        handleQuickSave();
+        return;
+      }
 
       if (cmdOrCtrl && e.key === 'z') {
         e.preventDefault();
@@ -751,6 +778,27 @@ export function Canvas() {
             outline: 'none', background: 'transparent',
           }}
         />
+
+        {/* Quick-save button */}
+        <button
+          onClick={handleQuickSave}
+          disabled={saving || isDetached}
+          title={isDetached ? 'Cannot save while viewing a past state' : 'Save (Cmd+S)'}
+          style={{
+            padding: '4px 0', borderRadius: 6,
+            border: '1px solid #ddd',
+            background: saving ? '#f8f8f8' : 'white',
+            cursor: isDetached ? 'default' : 'pointer',
+            fontSize: 13, opacity: isDetached ? 0.4 : 1,
+          }}
+        >
+          {saving ? 'Saving...' : '💾 Save'}
+          {lastSavedAt && !saving && (
+            <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>
+              {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </button>
 
         {/* Save / Load */}
         <div style={{ display: 'flex', gap: 6 }}>

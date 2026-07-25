@@ -76,4 +76,15 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-export const apiClient = { get, post, patch, postBinary, getBinary, del };
+async function putBinary<T>(path: string, data: Blob): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method:  'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
+    body:    data,
+  });
+
+  if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+export const apiClient = { get, post, patch, postBinary, putBinary, getBinary, del };

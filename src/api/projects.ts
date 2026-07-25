@@ -113,3 +113,18 @@ export async function updateLastBranch(
 ): Promise<void> {
   await apiClient.patch(`/projects/${projectId}/lastBranch`, { branchId });
 }
+
+export async function quickSave(
+  projectId: string,
+  branchId: string,
+  snapshot: Blob
+): Promise<void> {
+  await apiClient.putBinary(`/projects/${projectId}/branches/${branchId}/save`, snapshot);
+}
+
+export async function fetchCurrentState(
+  projectId: string,
+  branchId: string,
+): Promise<ArrayBuffer> {
+  return apiClient.getBinary(`/projects/${projectId}/branches/${branchId}/current`);
+}
