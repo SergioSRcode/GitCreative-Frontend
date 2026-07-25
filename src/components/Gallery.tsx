@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listProjects, createProject, deleteProject, type Project } from "../api/projects";
+import { 
+  listProjects, createProject, deleteProject, 
+  type Project 
+} from "../api/projects";
+import { deserialiseDocumentCompressed } from "../utils/document";
 
 export function Gallery() {
   const navigate = useNavigate();
@@ -70,6 +74,35 @@ export function Gallery() {
     navigate('/auth');
   }
 
+  async function handleImport(file: File) {
+    try {
+      const buffer = await file.arrayBuffer();
+      const doc = await deserialiseDocumentCompressed(buffer);
+
+      // creates a brand new project from the imported file's metadata
+      const { projectId, branchId } = await createProject(
+        doc.metadata.name || 'Imported Project',
+        doc.metadata.width,
+        doc.metadata.height
+      );
+
+      // Re-serialises the imported data as the initial commit for the new project
+      // Storing it temporarily so Canvas can pick it up on mount
+      sessionStorage.setItem('pendingImport', JSON.stringify({
+        metadataJson: JSON.stringify(doc.metadata)
+      }));
+
+      // stores raw layer pixels separately as they cannot go in sessionStorage as JSON
+      // IndexedDB-free approach: passes via navigation state instead
+      navigate(`/projects/${projectId}/branches/${branchId}`, {
+        state: { importedDoc: doc }
+      });
+    } catch (err) {
+      console.error('Import failed: ', err);
+      alert('File could not be imported - it may not be a valid .gitcreative file');
+    }
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -93,6 +126,23 @@ export function Gallery() {
               cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}
           >+ New Project</button>
+          <label style={{
+            padding: '8px 16px', borderRadius: 8,
+            border: '1px solid #ddd', background: 'white',
+            cursor: 'pointer', fontSize: 13,
+          }}>
+            ⬆ Import Project
+            <input
+              type="file"
+              accept=".gitcreative"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) handleImport(file)
+                e.target.value = ''
+              }}
+            />
+          </label>
           <button
             onClick={handleLogout}
             style={{

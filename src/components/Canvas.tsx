@@ -19,8 +19,9 @@ import { BrushPreview } from './BrushPreview';
 import { floodFill } from '../utils/fill';
 import type { AirbrushVariant } from '../types/brush';
 import { AIRBRUSH_VARIANTS } from '../types/brush';
-import { serialiseDocument, deserialiseDocument, 
-  serialiseDocumentCompressed, deserialiseDocumentCompressed
+import { serialiseDocument, //deserialiseDocument, 
+  serialiseDocumentCompressed, deserialiseDocumentCompressed,
+  type DeserialisedDocument
 } from '../utils/document';
 import { createCommit, listCommits, listBranchCommits, fetchSnapshot,
   listBranches, createBranch, deleteBranch, 
@@ -28,7 +29,7 @@ import { createCommit, listCommits, listBranchCommits, fetchSnapshot,
   type CommitSummary, type Branch, 
 } from '../api/projects';
 // import { CommitPanel } from './CommitPanel';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 // import { apiClient } from '../api/client';
 import { RightPanel } from './RightPanel';
 import { updateLastBranch } from '../api/projects';
@@ -51,6 +52,7 @@ export function Canvas() {
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   console.log('useParams on mount:', { urlProjectId, urlBranchId });
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [hsvColor, setHsvColor] = useState<HSVColor>({ h: 0, s: 1, v: 0 });
   const [recentColors, setRecentColors] = useState<RGBColor[]>([]);
@@ -455,38 +457,6 @@ export function Canvas() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleLoad(file: File) {
-    const gl = glRef.current!;
-    const buffer = await file.arrayBuffer();
-
-    let doc: ReturnType<typeof deserialiseDocument>;
-
-    try {
-      doc = deserialiseDocument(buffer);
-    } catch (err) {
-      console.error('Failed to load document:', err);
-      return;
-    }
-
-    const { metadata, layerPixels } = doc;
-
-
-    // resizes the canvas to match the saved dimensions
-    const canvas = canvasRef.current!;
-    canvas.width = metadata.width;
-    canvas.height = metadata.height;
-    gl.viewport(0, 0, metadata.width, metadata.height);
-    setCanvasPixelSize({ width: metadata.width, height: metadata.height });
-
-    // rebuilds layers from saved metadata + pixel data
-    loadLayers(gl, metadata, layerPixels);
-    
-    setProjectName(metadata.name);
-
-    compositeToScreen();
-    pushSnapshot(gl, layersRef.current);
-  }
-
   async function handleCommit() {
     if (!projectId || !branchId || !commitMessage.trim()) return;
     if (isDetached) return;  // safety guard - UI prevents this already
@@ -494,7 +464,6 @@ export function Canvas() {
 
     try {
       const gl = glRef.current!;
-      // const canvas = canvasRef.current!;
 
       // serialises current canvas state as a .gitcreative blob
       const blob = await serialiseDocumentCompressed(
@@ -556,14 +525,6 @@ export function Canvas() {
       console.error('Restore failed: ', err);
     }
   }
-
-  // async function handleToggleCommits() {
-  //   setShowCommits(s => !s);
-  //   if (!showCommits && projectId) {
-  //     const { commits: loaded } = await listCommits(projectId);
-  //     setCommits(loaded);
-  //   }
-  // }
 
   async function handleCheckout(branch: Branch) {
     if (!projectId || !branch.head_commit_id) return;
@@ -656,6 +617,7 @@ export function Canvas() {
   }
 
   async function handleQuickSave() {
+    console.log('handleQuickSave called', { projectId, activeBranchId, isDetached })
     if (!projectId || !activeBranchId || isDetached) return;
     setSaving(true);
 
@@ -675,13 +637,18 @@ export function Canvas() {
       setSaving(false);
     }
   }
+  const handleQuickSaveRef = useRef(handleQuickSave)
+  useEffect(() => {
+    handleQuickSaveRef.current = handleQuickSave  // updated every render, always current
+  }); 
 
   useEffect(() => {
-    // guards agains React strict mode double-invocation in development
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
     const canvas = canvasRef.current!;
+    // guards agains React strict mode double-invocation in development
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+    }
+
     const gl = canvas.getContext('webgl2');
     if (!gl) { console.error('WebGL2 not supported'); return };
 
@@ -695,9 +662,47 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);
     compositeToScreen();
 
-    // loads the project from the URL => restores latest commit if it exists
-    if (urlProjectId) loadProject(urlProjectId, urlBranchId);
+    // Handles an imported .gitcreative file (from Gallery import) if present,
+    // otherwise loads the project normally from the URL
+    const importedDoc = (location.state as { importedDoc?: DeserialisedDocument })?.importedDoc;
   
+    async function applyImportedDoc(doc: DeserialisedDocument) {
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      canvas.width = doc.metadata.width;
+      canvas.height = doc.metadata.height;
+      gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+      setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+
+      loadLayers(gl, doc.metadata, doc.layerPixels);
+      setProjectName(doc.metadata.name);
+      compositeToScreen();
+      pushSnapshot(gl, layersRef.current);
+
+      if (!urlProjectId || !urlBranchId) return;
+
+      const blob = await serialiseDocumentCompressed(
+        { name: doc.metadata.name, activeLayerId: doc.metadata.activeLayerId },
+        layersRef.current,
+        gl
+      );
+
+      const { commitId } = await createCommit(
+        urlProjectId, urlBranchId, null, 'Imported project', blob
+      );
+
+      setHeadCommitId(commitId);
+      setViewingCommitId(commitId);
+      await refreshCommits(urlProjectId, urlBranchId);
+    }
+
+    if (importedDoc) {
+      applyImportedDoc(importedDoc);
+    } else if (urlProjectId) {
+      loadProject(urlProjectId, urlBranchId);
+    }
+
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
@@ -705,7 +710,7 @@ export function Canvas() {
       if (cmdOrCtrl && e.key === 's') {
         e.preventDefault();
 
-        handleQuickSave();
+        handleQuickSaveRef.current();
         return;
       }
 

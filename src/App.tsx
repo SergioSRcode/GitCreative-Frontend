@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom"
+import { Routes, Route, Navigate, useParams } from "react-router-dom"
 import { Canvas } from "./components/Canvas"
 import { Gallery } from './components/Gallery'
 import { AuthPage } from './components/AuthPage'
@@ -14,6 +14,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+function CanvasWithKey() {
+  const { projectId, branchId } = useParams()
+  return <Canvas key={`${projectId}-${branchId}`} />
 }
 
 /*
@@ -45,7 +50,7 @@ export default function App() {
 
       <Route path="/projects/:projectId/branches/:branchId" element={
         <ProtectedRoute>
-          <Canvas />
+          <CanvasWithKey />
         </ProtectedRoute>
       } />
 
