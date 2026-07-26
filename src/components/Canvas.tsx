@@ -499,10 +499,16 @@ export function Canvas() {
   }
 
   async function handleRestoreCommit(commit: CommitSummary) {
-    if (!projectId) return;
+    if (!projectId || !activeBranchId) return;
 
     try {
-      const buffer = await fetchSnapshot(projectId, commit.id);
+      // If restoring to the branch's actual HEAD, prefer the quick-saved state
+      // (if any) over the commit's own frozen snapshot — otherwise any unsaved
+      // quick-save progress since the last commit would be silently lost
+      const isHeadCommit = commit.id === headCommitId;
+      const buffer = isHeadCommit
+        ? await fetchCurrentState(projectId, activeBranchId)
+        : await fetchSnapshot(projectId, commit.id);
       const doc = await deserialiseDocumentCompressed(buffer);
       const gl = glRef.current!;
       const canvas = canvasRef.current!;
@@ -517,8 +523,9 @@ export function Canvas() {
 
       // enters detached HEAD  - viewing a past state (not on top of a branch)
       setViewingCommitId(commit.id);
-      setIsDetached(true);
-      // setHeadCommitId(commit.id);
+
+      // if curr commit is NOT the branch's tip = true, else false
+      setIsDetached(!isHeadCommit);
 
       compositeToScreen();
       pushSnapshot(gl, layersRef.current);
@@ -531,9 +538,7 @@ export function Canvas() {
     if (!projectId || !branch.head_commit_id) return;
 
     try {
-      navigate(`/projects/${projectId}/branches/${branch.id}`);
-
-      const buffer = await fetchSnapshot(projectId, branch.head_commit_id);
+      const buffer = await fetchCurrentState(projectId, branch.id);
       const doc = await deserialiseDocumentCompressed(buffer);
       const gl = glRef.current!;
       const canvas = canvasRef.current!;
@@ -716,9 +721,13 @@ export function Canvas() {
 
   async function handleTimelinePreviewEnd() {
     // Revert canvas back to whatever is actually being viewed/committed
-    if (!projectId || !viewingCommitId) return
+    if (!projectId || !viewingCommitId || !activeBranchId) return;
+
     try {
-      const buffer = await fetchSnapshot(projectId, viewingCommitId)
+      const isHeadCommit = viewingCommitId === headCommitId;
+      const buffer = isHeadCommit
+        ? await fetchCurrentState(projectId, activeBranchId)
+        : await fetchSnapshot(projectId, viewingCommitId);
       const doc    = await deserialiseDocumentCompressed(buffer)
       const gl     = glRef.current!
       const canvas = canvasRef.current!
