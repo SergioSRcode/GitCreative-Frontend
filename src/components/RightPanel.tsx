@@ -4,7 +4,8 @@ import type { CommitSummary, Branch } from "../api/projects";
 import { LayerPanel } from "./LayerPanel";
 import { CommitsTab } from "./CommitsTab";
 import { BranchesTab } from "./BranchesTab";
-import { TreeTab } from "./TreeTab";
+// import { TreeTab } from "./TreeTab";
+import { TreeOverlay } from "./TreeOverlay";
 
 type Tab = 'layers' | 'commits' | 'branches' | 'tree';
 
@@ -36,6 +37,7 @@ type Props = {
   onCommit:       () => void,
   onRestoreCommit:(commit: CommitSummary) => void,
   onCreateBranchFromCommit: (commit: CommitSummary) => void,
+  onFetchThumbnail: (commitId: string) => Promise<string>,
 
   // Branch props
   branches:       Branch[],
@@ -45,15 +47,16 @@ type Props = {
 
 export function RightPanel(props: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('layers');
+  const [treeOpen, setTreeOpen] = useState(false);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'layers', label: 'Layers' },
     { id: 'commits', label: 'Commits' },
     { id: 'branches', label: 'Branches' },
-    { id: 'tree', label: 'Tree' },
+    // { id: 'tree', label: 'Tree' },
   ];
 
-    return (
+  return (
     <div style={{
       position: 'absolute', top: 10, right: 10, zIndex: 10,
       background: 'white', border: '1px solid #ddd',
@@ -87,6 +90,16 @@ export function RightPanel(props: Props) {
             {tab.label}
           </button>
         ))}
+
+        {/* Tree button */}
+        <button
+          onClick={() => setTreeOpen(true)}
+          title="View commit tree"
+          style={{
+            padding: '8px 12px', border: 'none', background: 'none',
+            cursor: 'pointer', fontSize: 11, color: '#888', flexShrink: 0,
+          }}
+        >🌳</button>
       </div>
 
       {/* Tab content */}
@@ -131,18 +144,20 @@ export function RightPanel(props: Props) {
             onDelete={props.onDeleteBranch}
           />
         )}
-
-        {activeTab === 'tree' && (
-          <TreeTab
-            commits={props.allCommits}
-            branches={props.branches}
-            headCommitId={props.headCommitId}
-            activeBranchId={props.activeBranchId}
-            onRestore={props.onRestoreCommit}
-            onDeleteBranch={props.onDeleteBranch}
-          />
-        )}
       </div>
+
+      {/* ← TreeOverlay goes here, as its own sibling AFTER the tab content div, still inside the outermost wrapping div */}
+      {treeOpen && (
+        <TreeOverlay
+          commits={props.allCommits}
+          branches={props.branches}
+          viewingCommitId={props.viewingCommitId}
+          activeBranchId={props.activeBranchId}
+          onClose={() => setTreeOpen(false)}
+          onRestore={commit => { props.onRestoreCommit(commit); setTreeOpen(false) }}
+          onFetchThumbnail={props.onFetchThumbnail}
+        />
+      )}
     </div>
   );
 }

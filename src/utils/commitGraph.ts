@@ -80,48 +80,43 @@ export function buildCommitGraph(
   }
 
   // lane assignment
-  type OpenLane = { lane: number; waitingFor: string | null };
+  type OpenLane = { lane: number; waitingFor: string };
   const openLanes: OpenLane[] = [];
+  const placements = new Map<string, { row: number; lane: number }>();
   const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
+  // const edges: GraphEdge[] = [];
   let nextLane = 0;
 
   sorted.forEach((commit, row) => {
-    // find an open lane waiting for this commit
-    let laneEntry = openLanes.find(l => l.waitingFor === commit.id);
+    // find all open lanes waiting for this commit
+    const waitingLanes = openLanes.filter(l => l.waitingFor === commit.id);
 
-    if (!laneEntry) {
-      // if no lane is waiting = branch tip with no prior claim => opens new lane
-      laneEntry = { lane: nextLane++, waitingFor: commit.id };
-      openLanes.push(laneEntry);
+    let primaryLane: OpenLane;
+
+    if (waitingLanes.length === 0) {
+      // opens a fresh lane (a branch tip with no children yet)
+      primaryLane = { lane: nextLane++, waitingFor: commit.id };
+      openLanes.push(primaryLane);
+    } else {
+      // Uses the first waiting lane as curr node's column
+      primaryLane = waitingLanes[0];
+
+      // Any additional lanes waiting for this commit converge at this point 
+      for (let i = 1; i < waitingLanes.length; i++) {
+        openLanes.splice(openLanes.indexOf(waitingLanes[i]), 1);
+      }
     }
 
-    const lane = laneEntry.lane;
+    const lane = primaryLane.lane;
+    placements.set(commit.id, { row, lane });
+
 
     // draws edge to parent if parent exists
     if (commit.parent_id) {
-      // checks if another lane is already waiting for the same parent
-      // if yes, curr commits edge converges into that lane
-      const existingParentLane = openLanes.find(
-        l => l.waitingFor === commit.parent_id && l !== laneEntry
-      );
-      const targetLane = existingParentLane ? existingParentLane.lane : lane;
-
-      edges.push({
-        fromRow: row, fromLane: lane,
-        toRow: row + 1, toLane: targetLane,
-        color: commitBranchColor.get(commit.id) ?? MAIN_COLOR,
-      });
-
-      if (existingParentLane) {
-        // converges - closes this lane, other lane continues
-        openLanes.splice(openLanes.indexOf(laneEntry), 1);
-      } else {
-        laneEntry.waitingFor = commit.parent_id;
-      }
+      primaryLane.waitingFor = commit.parent_id;
     } else {
-      // root commit -> curr lane closed
-      openLanes.splice(openLanes.indexOf(laneEntry), 1);
+      // root commit -> closes lane
+      openLanes.splice(openLanes.indexOf(primaryLane), 1);
     }
 
     const labels = (branchesByCommit.get(commit.id) ?? []).map(b => ({
@@ -137,6 +132,24 @@ export function buildCommitGraph(
       branchColor: commitBranchColor.get(commit.id) ?? MAIN_COLOR,
       branchLabels: labels,
       isCurrent: commit.id === viewingCommitId,
+    });
+  });
+
+  // Pass 2 — draws edges using each commit's ACTUAL placement, not an assumed row+1.
+  // This is what fixes disconnected lines: every child now connects directly
+  // to wherever its parent really ended up, however many rows apart that is.
+  const edges: GraphEdge[] = [];
+  sorted.forEach(commit => {
+    if (!commit.parent_id) return;
+
+    const from = placements.get(commit.id);
+    const to   = placements.get(commit.parent_id);
+    if (!from || !to) return;
+
+    edges.push({
+      fromRow: from.row, fromLane: from.lane,
+      toRow:   to.row,   toLane:   to.lane,
+      color:   commitBranchColor.get(commit.id) ?? MAIN_COLOR,
     });
   });
 

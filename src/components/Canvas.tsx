@@ -48,6 +48,7 @@ export function Canvas() {
   // const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
+  const thumbnailCache = useRef<Map<string, string>>(new Map())
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   console.log('useParams on mount:', { urlProjectId, urlBranchId });
@@ -642,6 +643,47 @@ export function Canvas() {
     handleQuickSaveRef.current = handleQuickSave  // updated every render, always current
   }); 
 
+  async function handleFetchThumbnail(commitId: string): Promise<string> {
+    if (thumbnailCache.current.has(commitId)) {
+      return thumbnailCache.current.get(commitId)!;
+    }
+
+    const buffer = await fetchSnapshot(projectId, commitId);
+    const doc = await deserialiseDocumentCompressed(buffer);
+
+    // renders a quicke composite to an offscreen canvas for the thumbnail
+    const offscreen = document.createElement('canvas');
+    offscreen.width = 200;
+    offscreen.height = 150;
+    const ctx = offscreen.getContext('2d')!;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, 200, 150);
+
+    // draws the top layers pixels scaled down
+    if (doc.metadata.layers.length > 0) {
+      const topLayerMeta = doc.metadata.layers[doc.metadata.layers.length - 1];
+      const pixels = doc.layerPixels.get(topLayerMeta.id);
+
+      if (pixels) {
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = doc.metadata.width;
+        layerCanvas.height = doc.metadata.height;
+
+        const layerCtx = layerCanvas.getContext('2d')!;
+        const imageData = new ImageData(
+          new Uint8ClampedArray(pixels), doc.metadata.width, doc.metadata.height
+        );
+        layerCtx.putImageData(imageData, 0, 0);
+        ctx.drawImage(layerCanvas, 0, 0, 200, 150);
+      }
+    }
+
+    const url = offscreen.toDataURL('image/png');
+    thumbnailCache.current.set(commitId, url);
+
+    return url;
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     // guards agains React strict mode double-invocation in development
@@ -1021,7 +1063,6 @@ export function Canvas() {
       {/* Tab panel: Layers, commits, branches */}
       <RightPanel
         // Layer props
-        viewingCommitId={viewingCommitId}
         layers={layersDisplay}
         activeLayerId={activeLayerId}
         onSelectLayer={setActiveLayerId}
@@ -1036,6 +1077,7 @@ export function Canvas() {
         onClear={handleClearLayer}
 
         // Commit props
+        viewingCommitId={viewingCommitId}
         branchCommits={branchCommits}
         allCommits={allCommits}
         headCommitId={headCommitId}
@@ -1047,6 +1089,7 @@ export function Canvas() {
         onCommit={handleCommit}
         onRestoreCommit={handleRestoreCommit}
         onCreateBranchFromCommit={handleCreateBranchFromCommit}
+        onFetchThumbnail={handleFetchThumbnail}
 
         // Branch props
         branches={branches}

@@ -96,7 +96,8 @@ export function TreeOverlay({
         {/* Scrollable graph area */}
         <div style={{ flex: 1, overflow: 'auto', position: 'relative', padding: 20 }}>
           <svg width={width} height={height} style={{ display: 'block' }}>
-            {/* Edges — straight lines, L-shaped when crossing lanes */}
+
+            {/* Edges — straight lines, L-shaped when crossing lanes, horizontal at branch points */}
             {graph.edges.map((edge, i) => {
               const x1 = laneX(edge.fromLane)
               const y1 = rowY(edge.fromRow) + SQUARE_H / 2
@@ -105,20 +106,14 @@ export function TreeOverlay({
 
               if (edge.fromLane === edge.toLane) {
                 return (
-                  <line
-                    key={i}
-                    x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke={edge.color} strokeWidth={2}
-                  />
+                  <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={edge.color} strokeWidth={2} />
                 )
               }
 
-              // L-shaped: straight down, then straight across
-              const midY = y1 + (y2 - y1) / 2
               return (
                 <polyline
                   key={i}
-                  points={`${x1},${y1} ${x1},${midY} ${x2},${midY} ${x2},${y2}`}
+                  points={`${x1},${y1} ${x1},${y2} ${x2},${y2}`}
                   fill="none" stroke={edge.color} strokeWidth={2}
                 />
               )
@@ -153,7 +148,10 @@ export function TreeOverlay({
                     fontFamily="monospace"
                     fill={node.isCurrent ? 'white' : node.branchColor}
                   >
-                    {node.commit.id.slice(0, 6)}
+                    {node.commit.message.length > 10
+                      ? node.commit.message.slice(0, 9) + '...'
+                      : node.commit.message}
+                    <title>{node.commit.message}</title>
                   </text>
 
                   {/* "current" indicator */}
