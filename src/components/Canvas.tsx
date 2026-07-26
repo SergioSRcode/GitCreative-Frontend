@@ -576,7 +576,7 @@ export function Canvas() {
   async function handleCreateBranchFromCommit(commit: CommitSummary) {
     if (!projectId) return;
 
-    const name = prompt('New branch name:');
+    const name = prompt('Name this Timeline:');
     if (!name?.trim()) return;
 
     try {

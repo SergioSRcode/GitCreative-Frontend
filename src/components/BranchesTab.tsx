@@ -149,12 +149,12 @@ export function BranchesTab({
                 </span>
                 {isMain && (
                   <span style={{ fontSize: 10, color: '#aaa', background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>
-                    default
+                    Default
                   </span>
                 )}
                 {isActive && (
                   <span style={{ fontSize: 10, color: '#4caf50', background: '#e8f5e9', borderRadius: 3, padding: '1px 4px' }}>
-                    active
+                    Current
                   </span>
                 )}
               </div>
@@ -187,7 +187,7 @@ export function BranchesTab({
                   borderRadius: 4, border: '1px solid #ddd',
                   background: 'white', cursor: 'pointer',
                 }}
-              >Checkout</button>
+              >Switch to this</button>
             )}
           </div>
         )

@@ -53,8 +53,8 @@ export function RightPanel(props: Props) {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'layers', label: 'Layers' },
-    { id: 'commits', label: 'Commits' },
-    { id: 'branches', label: 'Branches' },
+    { id: 'commits', label: 'History' },
+    { id: 'branches', label: 'Timelines' },
     // { id: 'tree', label: 'Tree' },
   ];
 
@@ -96,7 +96,7 @@ export function RightPanel(props: Props) {
         {/* Tree button */}
         <button
           onClick={() => setTreeOpen(true)}
-          title="View commit tree"
+          title="View version history"
           style={{
             padding: '8px 12px', border: 'none', background: 'none',
             cursor: 'pointer', fontSize: 11, color: '#888', flexShrink: 0,

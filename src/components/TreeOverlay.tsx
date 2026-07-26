@@ -86,7 +86,7 @@ export function TreeOverlay({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '14px 20px', borderBottom: '1px solid #eee', flexShrink: 0,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>Commit tree</span>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>Version History</span>
           <button
             onClick={onClose}
             style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}
@@ -162,7 +162,7 @@ export function TreeOverlay({
                       fontWeight={600}
                       fill="#222"
                     >
-                      current
+                      You are here
                     </text>
                   )}
 

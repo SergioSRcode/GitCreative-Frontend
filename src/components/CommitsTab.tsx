@@ -67,8 +67,8 @@ export function CommitsTab({
           borderRadius: 6, padding: '8px 10px',
           fontSize: 12, color: '#7a6000', lineHeight: 1.4,
         }}>
-          👁 Viewing past state — drawing is disabled.
-          Create a branch to continue working from here.
+          You're looking back at an earlier version. 
+          To keep painting from here, save it as a new version line.
         </div>
       )}
 
@@ -77,8 +77,8 @@ export function CommitsTab({
           <input
             value={commitMessage}
             onChange={e => onCommitMessageChange(e.target.value)}
-            placeholder="Commit message..."
-            aria-label="Commit message"
+            placeholder="Describe what changed..."
+            aria-label="Version description"
             onKeyDown={e => { if (e.key === 'Enter') onCommit() }}
             style={{
               border: '1px solid #ddd', borderRadius: 6,
@@ -97,7 +97,7 @@ export function CommitsTab({
               fontSize: 12, fontWeight: 500,
             }}
           >
-            {committing ? 'Saving...' : '📸 Commit'}
+            {committing ? 'Saving...' : '📸 Version Snapshot'}
           </button>
         </div>
       )}
@@ -149,10 +149,10 @@ export function CommitsTab({
                     {commit.message}
                   </span>
                   {isCurrent && (
-                    <span style={{ fontSize: 10, color: '#888', flexShrink: 0 }}>HEAD</span>
+                    <span style={{ fontSize: 10, color: '#888', flexShrink: 0 }}>Latest</span>
                   )}
                   {isDetached && isViewing && (
-                    <span style={{ fontSize: 10, color: '#7a6000', flexShrink: 0 }}>viewing</span>
+                    <span style={{ fontSize: 10, color: '#7a6000', flexShrink: 0 }}>Looking at this</span>
                   )}
                 </div>
 
@@ -169,7 +169,7 @@ export function CommitsTab({
                         borderRadius: 4, border: '1px solid #ddd',
                         background: 'white', cursor: 'pointer',
                       }}
-                    >View</button>
+                    >Look at this</button>
                   )}
                   {!isCurrent && (
                     <button
@@ -180,7 +180,7 @@ export function CommitsTab({
                         color: '#4caf50', background: 'white',
                         cursor: 'pointer',
                       }}
-                    >Branch here</button>
+                    >Continue from here</button>
                   )}
                 </div>
               </div>
