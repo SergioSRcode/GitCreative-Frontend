@@ -1,4 +1,5 @@
 import type { CommitSummary } from "../api/projects";
+import { useState, useEffect, useRef } from "react";
 
 type Props = {
   commits: CommitSummary[],
@@ -11,6 +12,9 @@ type Props = {
   onCommit: () => void,
   onRestore: (commit: CommitSummary) => void,
   onCreateBranch: (commit: CommitSummary) => void,
+  onTimelinePreview: (commit: CommitSummary) => void,
+  onTimelinePreviewEnd: () => void;
+  onFetchThumbnail: (commitId: string) => Promise<string>,
 };
 
 export function CommitsTab({
@@ -18,11 +22,45 @@ export function CommitsTab({
   commitMessage, committing, isDetached,
   onCommitMessageChange, onCommit,
   onRestore, onCreateBranch,
+  onTimelinePreview, onTimelinePreviewEnd, onFetchThumbnail,
 }: Props) {
+  const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Lazily load thumbnails for visible commits
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadThumbs() {
+      for (const c of commits) {
+        if (thumbs.has(c.id)) continue;
+
+        try {
+          const url = await onFetchThumbnail(c.id);
+          if (!cancelled) setThumbs(prev => new Map(prev).set(c.id, url));
+        } catch { /* ignore individual failures */ }
+      }
+    }
+    loadThumbs();
+
+    return () => { cancelled = true };
+  }, [commits])
+
+  function handleMouseEnter(commit: CommitSummary) {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    // Small debounce so quickly passing the mouse over several rows
+    // doesn't trigger a fetch+render for each one
+    hoverTimer.current = setTimeout(() => onTimelinePreview(commit), 150);
+  }
+
+  function handleMouseLeave() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    onTimelinePreviewEnd();
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {/* Detached HEAD banner */}
       {isDetached && (
         <div style={{
           background: '#fff8e1', border: '1px solid #ffe082',
@@ -34,7 +72,6 @@ export function CommitsTab({
         </div>
       )}
 
-      {/* Commit input — only shown when on a branch */}
       {!isDetached && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input
@@ -65,7 +102,6 @@ export function CommitsTab({
         </div>
       )}
 
-      {/* Commit list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {commits.length === 0 && (
           <span style={{ fontSize: 12, color: '#aaa', textAlign: 'center' }}>
@@ -77,56 +113,76 @@ export function CommitsTab({
           const isHead    = commit.id === headCommitId
           const isViewing = commit.id === viewingCommitId
           const isCurrent = isHead && !isDetached
+          const thumb     = thumbs.get(commit.id)
 
           return (
             <div
               key={commit.id}
+              onMouseEnter={() => handleMouseEnter(commit)}
+              onMouseLeave={handleMouseLeave}
               style={{
                 border: `1px solid ${isViewing ? '#888' : '#eee'}`,
                 borderRadius: 8, padding: 8,
                 background: isViewing ? '#f8f8f8' : 'white',
-                display: 'flex', flexDirection: 'column', gap: 4,
+                display: 'flex', gap: 8,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 500, flex: 1 }}>
-                  {commit.message}
-                </span>
-                {isCurrent && (
-                  <span style={{ fontSize: 10, color: '#888', flexShrink: 0 }}>HEAD</span>
-                )}
-                {isDetached && isViewing && (
-                  <span style={{ fontSize: 10, color: '#7a6000', flexShrink: 0 }}>viewing</span>
+              {/* Thumbnail */}
+              <div style={{
+                width: 48, height: 36, flexShrink: 0,
+                borderRadius: 4, overflow: 'hidden',
+                background: '#f5f5f3', border: '1px solid #eee',
+              }}>
+                {thumb ? (
+                  <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#ccc' }}>
+                    ...
+                  </div>
                 )}
               </div>
 
-              <span style={{ fontSize: 10, color: '#aaa' }}>
-                {new Date(commit.created_at).toLocaleString()}
-              </span>
+              {/* Commit info */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, flex: 1 }}>
+                    {commit.message}
+                  </span>
+                  {isCurrent && (
+                    <span style={{ fontSize: 10, color: '#888', flexShrink: 0 }}>HEAD</span>
+                  )}
+                  {isDetached && isViewing && (
+                    <span style={{ fontSize: 10, color: '#7a6000', flexShrink: 0 }}>viewing</span>
+                  )}
+                </div>
 
-              <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-                {!isViewing && (
-                  <button
-                    onClick={() => onRestore(commit)}
-                    style={{
-                      fontSize: 10, padding: '2px 6px',
-                      borderRadius: 4, border: '1px solid #ddd',
-                      background: 'white', cursor: 'pointer',
-                    }}
-                  >View</button>
-                )}
-                {/* Show "Create branch here" for any commit when detached or for non-HEAD commits */}
-                {(!isCurrent) && (
-                  <button
-                    onClick={() => onCreateBranch(commit)}
-                    style={{
-                      fontSize: 10, padding: '2px 6px',
-                      borderRadius: 4, border: '1px solid #4caf50',
-                      color: '#4caf50', background: 'white',
-                      cursor: 'pointer',
-                    }}
-                  >Branch here</button>
-                )}
+                <span style={{ fontSize: 10, color: '#aaa' }}>
+                  {new Date(commit.created_at).toLocaleString()}
+                </span>
+
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {!isViewing && (
+                    <button
+                      onClick={() => onRestore(commit)}
+                      style={{
+                        fontSize: 10, padding: '2px 6px',
+                        borderRadius: 4, border: '1px solid #ddd',
+                        background: 'white', cursor: 'pointer',
+                      }}
+                    >View</button>
+                  )}
+                  {!isCurrent && (
+                    <button
+                      onClick={() => onCreateBranch(commit)}
+                      style={{
+                        fontSize: 10, padding: '2px 6px',
+                        borderRadius: 4, border: '1px solid #4caf50',
+                        color: '#4caf50', background: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >Branch here</button>
+                  )}
+                </div>
               </div>
             </div>
           )

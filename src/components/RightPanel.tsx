@@ -37,6 +37,8 @@ type Props = {
   onCommit:       () => void,
   onRestoreCommit:(commit: CommitSummary) => void,
   onCreateBranchFromCommit: (commit: CommitSummary) => void,
+  onTimelinePreview: (commit: CommitSummary) => void,
+  onTimelinePreviewEnd: () => void,
   onFetchThumbnail: (commitId: string) => Promise<string>,
 
   // Branch props
@@ -133,6 +135,9 @@ export function RightPanel(props: Props) {
             onCommit={props.onCommit}
             onRestore={props.onRestoreCommit}
             onCreateBranch={props.onCreateBranchFromCommit}
+            onTimelinePreview={props.onTimelinePreview}
+            onTimelinePreviewEnd={props.onTimelinePreviewEnd}
+            onFetchThumbnail={props.onFetchThumbnail}
           />
         )}
 

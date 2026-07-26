@@ -48,10 +48,10 @@ export function Canvas() {
   // const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
-  const thumbnailCache = useRef<Map<string, string>>(new Map())
+  const thumbnailCache = useRef<Map<string, string>>(new Map());
+  const previewingRef = useRef(false);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
-  console.log('useParams on mount:', { urlProjectId, urlBranchId });
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -684,6 +684,59 @@ export function Canvas() {
     return url;
   }
 
+  async function handleTimelinePreview(commit: CommitSummary) {
+    if (!projectId) return;
+    previewingRef.current = true;
+
+    try {
+      const buffer = await fetchSnapshot(projectId, commit.id);
+      const doc    = await deserialiseDocumentCompressed(buffer);
+      const gl     = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      // Only resize if dimensions actually differ, to avoid flicker
+      if (canvas.width !== doc.metadata.width || canvas.height !== doc.metadata.height) {
+        canvas.width  = doc.metadata.width;
+        canvas.height = doc.metadata.height;
+        gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+        setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+      }
+
+      loadLayers(gl, doc.metadata, doc.layerPixels);
+      compositeToScreen();
+    } catch (err) {
+      console.error('Timeline preview failed:', err);
+    }
+  }
+
+  // function handleTimelineCommit(commit: CommitSummary) {
+  //   // Actually commit to viewing this state — same as clicking "View" in Commits tab
+  //   handleRestoreCommit(commit);
+  // }
+
+  async function handleTimelinePreviewEnd() {
+    // Revert canvas back to whatever is actually being viewed/committed
+    if (!projectId || !viewingCommitId) return
+    try {
+      const buffer = await fetchSnapshot(projectId, viewingCommitId)
+      const doc    = await deserialiseDocumentCompressed(buffer)
+      const gl     = glRef.current!
+      const canvas = canvasRef.current!
+
+      if (canvas.width !== doc.metadata.width || canvas.height !== doc.metadata.height) {
+        canvas.width  = doc.metadata.width
+        canvas.height = doc.metadata.height
+        gl.viewport(0, 0, doc.metadata.width, doc.metadata.height)
+        setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height })
+      }
+
+      loadLayers(gl, doc.metadata, doc.layerPixels)
+      compositeToScreen()
+    } catch (err) {
+      console.error('Failed to revert preview:', err)
+    }
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     // guards agains React strict mode double-invocation in development
@@ -1089,6 +1142,8 @@ export function Canvas() {
         onCommit={handleCommit}
         onRestoreCommit={handleRestoreCommit}
         onCreateBranchFromCommit={handleCreateBranchFromCommit}
+        onTimelinePreview={handleTimelinePreview}
+        onTimelinePreviewEnd={handleTimelinePreviewEnd}
         onFetchThumbnail={handleFetchThumbnail}
 
         // Branch props
