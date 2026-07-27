@@ -50,4 +50,62 @@ describe('buildCommitGraph', () => {
     expect(graph.nodes[0].commit.id).toBe('c3')
     expect(graph.nodes[2].commit.id).toBe('c1')
   });
+
+  it('assigns separate lanes when a commit has two children (a branch point)', () => {
+    const commits = [
+      makeCommit('base',   null,    'base',   0),
+      makeCommit('mainTip','base',  'main2',  1000),
+      makeCommit('sideTip','base',  'side1',  2000),
+    ];
+    const branches = [
+      makeBranch('b1', 'main', 'mainTip'),
+      makeBranch('b2', 'side', 'sideTip'),
+    ];
+
+    const graph = buildCommitGraph(commits, branches, null, 'b1');
+
+    const base    = graph.nodes.find(n => n.commit.id === 'base')!;
+    const mainTip = graph.nodes.find(n => n.commit.id === 'mainTip')!;
+    const sideTip = graph.nodes.find(n => n.commit.id === 'sideTip')!;
+
+    // The two branch tips must be in different lanes — that's the whole point
+    // of a branch point, otherwise they'd visually overlap
+    expect(mainTip.lane).not.toBe(sideTip.lane);
+
+    // There should be exactly one edge from each tip converging down to `base`
+    const edgesToBase = graph.edges.filter(e =>
+      e.toRow === base.row && e.toLane === base.lane
+    );
+
+    expect(edgesToBase.length).toBe(2);
+  });
+
+  it('connects a commit to its parent even when other commits are interleaved between them', () => {
+    const commits = [
+      makeCommit('c5', 'c4', 'newest on main',      5000),
+      makeCommit('sideNew', 'c2', 'side branch tip', 4000), // interleaved — different branch
+      makeCommit('c4', 'c3', 'main 4',              3000),
+      makeCommit('c3', 'c2', 'main 3',              2000),
+      makeCommit('c2', 'c1', 'main 2',              1000),
+      makeCommit('c1', null, 'root',                0),
+    ];
+    const branches = [
+      makeBranch('b1', 'main', 'c5'),
+      makeBranch('b2', 'side', 'sideNew'),
+    ];
+
+    const graph = buildCommitGraph(commits, branches, null, 'b1');
+
+    const c4   = graph.nodes.find(n => n.commit.id === 'c4')!;
+    const c3   = graph.nodes.find(n => n.commit.id === 'c3')!;
+
+    // c4's parent is c3 — verify a real edge connects their actual positions,
+    // not some assumed adjacent row
+    const edge = graph.edges.find(e =>
+      e.fromRow === c4.row && e.fromLane === c4.lane &&
+      e.toRow === c3.row && e.toLane === c3.lane
+    );
+
+    expect(edge).toBeDefined();
+  });
 });
