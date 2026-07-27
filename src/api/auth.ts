@@ -19,7 +19,8 @@ export async function login(
 export async function register(
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  website: string = ''  // HP field - always empty
 ): Promise<AuthResponse> {
-  return apiClient.post('/auth/register', { email, password, displayName });
+  return apiClient.post('/auth/register', { email, password, displayName, website });
 }

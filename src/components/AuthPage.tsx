@@ -10,6 +10,7 @@ export function AuthPage() {
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [website, setWebsite] = useState('');  // honeypot — should always stay empty
 
   async function handleSubmit() {
     setError(null);
@@ -18,12 +19,11 @@ export function AuthPage() {
     try {
       const res = mode === 'login'
         ? await login(email, password)
-        : await register(email, password, displayName);
+        : await register(email, password, displayName, website);
 
       localStorage.setItem('authToken', res.token);
       navigate('/gallery');
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError(mode === 'login'
         ? 'Invalid email or password'
         : 'Registration failed - email may already be in use'
@@ -67,6 +67,7 @@ export function AuthPage() {
         </div>
 
         {mode === 'register' && (
+        <>
           <input
             value={displayName}
             onChange={e => setDisplayName(e.target.value)}
@@ -77,6 +78,23 @@ export function AuthPage() {
               padding: '8px 10px', fontSize: 13, outline: 'none',
             }}
           />
+
+          {/* HP */}
+          <input
+            value={website}
+            onChange={e => setWebsite(e.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '-9999px',
+              width: 1,
+              height: 1,
+              opacity: 0,
+            }}
+          />
+        </>
         )}
 
         <input
