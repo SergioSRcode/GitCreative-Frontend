@@ -275,6 +275,7 @@ export function TreeOverlay({
       {comparing && (
         <ComparisonOverlay
           commits={selected}
+          allCommits={commits}
           branches={branches}
           onClose={() => setComparing(false)}
           onRemove={handleRemoveFromComparison}

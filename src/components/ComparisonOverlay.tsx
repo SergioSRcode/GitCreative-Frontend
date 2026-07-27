@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { CommitSummary, Branch } from "../api/projects";
 
 type Props = {
-  commits: CommitSummary[],
+  commits: CommitSummary[],  // selected in selection order
+  allCommits: CommitSummary[],  // full history
   branches: Branch[],
   onClose: () => void,
   onRemove: (commitId: string) => void,
@@ -12,11 +13,12 @@ type Props = {
 const RENDER_SIZE = { w: 480, h: 360 };
 
 export function ComparisonOverlay({
-  commits, branches, onClose, onRemove, onFetchThumbnail,
+  commits, allCommits, branches, onClose, onRemove, onFetchThumbnail,
 }: Props) {
   const [images, setImages] = useState<Map<string, string>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
+  const commitBranchMap = buildCommitBranchMap(allCommits, branches);
   // fetches a larger render for any commit not already cached
   useEffect(() => {
     let cancelled = false;
@@ -53,11 +55,45 @@ export function ComparisonOverlay({
   // auto-fits column count - roughly square grid: 4 -> 2 cols, 6 -> 3 cols...
   const columns = Math.max(1, Math.ceil(Math.sqrt(commits.length)));
 
-  function branchNameFor(commit: CommitSummary): { name: string; color: string } | null {
-    const owning = branches.find(b => b.head_commit_id === commit.id);
-    if (!owning) return null;
+  // function branchNameFor(commit: CommitSummary): { name: string; color: string } | null {
+  //   const owning = branches.find(b => b.head_commit_id === commit.id);
+  //   if (!owning) return null;
 
-    return { name: owning.name, color: '#4caf50' };
+  //   return { name: owning.name, color: '#4caf50' };
+  // }
+
+  function buildCommitBranchMap(
+    allCommits: CommitSummary[],
+    branches:   Branch[]
+  ): Map<string, { name: string; color: string }[]> {
+    const commitById = new Map(allCommits.map(c => [c.id, c]));
+    const result = new Map<string, { name: string; color: string }[]>();
+
+    const BRANCH_COLORS = ['#4caf50', '#2196f3', '#9c27b0', '#ff9800', '#e91e63', '#00bcd4', '#ff5722', '#607d8b'];
+    let colorIndex = 0;
+
+    const colorFor = (name: string) => {
+      if (name === 'main') return '#000000';
+      return BRANCH_COLORS[colorIndex++ % BRANCH_COLORS.length];
+    };
+
+    for (const branch of branches) {
+      const color = colorFor(branch.name);
+      let current = branch.head_commit_id;
+
+      while (current) {
+        const existing = result.get(current) ?? [];
+        // Avoid adding the same branch twice if somehow revisited
+        if (!existing.some(b => b.name === branch.name)) {
+          result.set(current, [...existing, { name: branch.name, color }]);
+        }
+
+        const commit = commitById.get(current);
+        current = commit?.parent_id ?? null;
+      }
+    }
+
+    return result;
   }
 
   return (
@@ -101,7 +137,7 @@ export function ComparisonOverlay({
         }}>
           {commits.map(commit => {
             const img   = images.get(commit.id)
-            const label = branchNameFor(commit)
+            const labels = commitBranchMap.get(commit.id) ?? [];
 
             return (
               <div
@@ -140,18 +176,25 @@ export function ComparisonOverlay({
 
                 <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <span style={{ fontSize: 12, fontWeight: 500 }}>{commit.message}</span>
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#aaa' }}>
                       {new Date(commit.created_at).toLocaleString()}
                     </span>
-                    {label && (
-                      <span style={{
-                        fontSize: 9, color: label.color, background: label.color + '18',
-                        border: `1px solid ${label.color}`, borderRadius: 3, padding: '1px 5px',
-                      }}>
-                        {label.name}
-                      </span>
-                    )}
+
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {labels.map(label => (
+                        <span
+                          key={label.name}
+                          style={{
+                            fontSize: 9, color: label.color, background: label.color + '18',
+                            border: `1px solid ${label.color}`, borderRadius: 3, padding: '1px 5px',
+                          }}
+                        >
+                          {label.name}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
