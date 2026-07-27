@@ -7,7 +7,7 @@ import { resample, smooth } from '../utils/stroke';
 import { BrushRenderer } from '../rendering/BrushRenderer';
 import { Compositor } from '../rendering/Compositor';
 import { sampleColorFromLayer } from '../utils/eyedropper';
-import { exportCanvas } from '../utils/export';
+import { exportCanvas, flipVertically } from '../utils/export';
 import type { ExportFormat } from '../utils/export';
 import { useLayers } from '../hooks/useLayers';
 import { useHistory } from '../hooks/useHistory';
@@ -648,9 +648,13 @@ export function Canvas() {
     handleQuickSaveRef.current = handleQuickSave  // updated every render, always current
   }); 
 
-  async function handleFetchThumbnail(commitId: string): Promise<string> {
-    if (thumbnailCache.current.has(commitId)) {
-      return thumbnailCache.current.get(commitId)!;
+  async function handleFetchThumbnail(
+    commitId: string, 
+    size: { w: number; h: number } = { w: 200, h: 150 }
+  ): Promise<string> {
+    const cacheKey = `${commitId}_${size.w}x${size.h}`;
+    if (thumbnailCache.current.has(cacheKey)) {
+      return thumbnailCache.current.get(cacheKey)!;
     }
 
     const buffer = await fetchSnapshot(projectId, commitId);
@@ -658,11 +662,11 @@ export function Canvas() {
 
     // renders a quicke composite to an offscreen canvas for the thumbnail
     const offscreen = document.createElement('canvas');
-    offscreen.width = 200;
-    offscreen.height = 150;
+    offscreen.width = size.w;
+    offscreen.height = size.h;
     const ctx = offscreen.getContext('2d')!;
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, 200, 150);
+    ctx.fillRect(0, 0, size.w, size.h);
 
     // draws the top layers pixels scaled down
     if (doc.metadata.layers.length > 0) {
@@ -670,16 +674,18 @@ export function Canvas() {
       const pixels = doc.layerPixels.get(topLayerMeta.id);
 
       if (pixels) {
+        const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height);
+
         const layerCanvas = document.createElement('canvas');
         layerCanvas.width = doc.metadata.width;
         layerCanvas.height = doc.metadata.height;
 
         const layerCtx = layerCanvas.getContext('2d')!;
         const imageData = new ImageData(
-          new Uint8ClampedArray(pixels), doc.metadata.width, doc.metadata.height
+          new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height
         );
         layerCtx.putImageData(imageData, 0, 0);
-        ctx.drawImage(layerCanvas, 0, 0, 200, 150);
+        ctx.drawImage(layerCanvas, 0, 0, size.w, size.h);
       }
     }
 

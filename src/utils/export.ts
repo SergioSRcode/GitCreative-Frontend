@@ -65,7 +65,7 @@ export async function exportCanvas(
   }, mimeType, quality);
 }
 
-function flipVertically(pixels: Uint8Array, width: number, height: number): Uint8Array {
+export function flipVertically(pixels: Uint8Array, width: number, height: number): Uint8Array {
   const rowSize = width * 4;  // 4 bytes per pixel (RGBA)
   const flipped = new Uint8Array(pixels.length);
 
