@@ -982,18 +982,6 @@ export function Canvas() {
           }}
         >← Gallery</button>
 
-        <input
-          value={projectName}
-          onChange={e => setProjectName(e.target.value)}
-          aria-label="Project name"
-          style={{
-            border: 'none', borderBottom: '1px solid #ddd',
-            fontSize: 13, fontWeight: 500,
-            width: '100%', padding: '2px 0',
-            outline: 'none', background: 'transparent',
-          }}
-        />
-
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', position: 'relative' }}>
           <div
             onClick={() => setShowPicker(p => !p)}
@@ -1014,7 +1002,7 @@ export function Canvas() {
               background: eyedropper ? '#f0f0f0' : 'white',
               cursor: 'pointer', fontSize: 12,
             }}
-          >💧</button>
+          >Color Picker💧</button>
         </div>
 
         {showPicker && (
