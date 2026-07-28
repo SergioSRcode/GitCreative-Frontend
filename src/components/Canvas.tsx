@@ -142,6 +142,7 @@ export function Canvas() {
         canvas.height = doc.metadata.height;
         gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
         setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+        recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
 
         loadLayers(gl, doc.metadata, doc.layerPixels);
         setProjectName(doc.metadata.name);
@@ -161,6 +162,10 @@ export function Canvas() {
     } catch (err) {
       console.error('Failed to load project: ', err);
     }
+  }
+
+  function recreateStrokeMask(gl: WebGL2RenderingContext, width: number, height: number) {
+    strokeMaskRef.current = createLayer(gl, width, height, '__stroke_mask__');
   }
 
   function airbrushTick() {
@@ -273,6 +278,7 @@ export function Canvas() {
 
   function renderCurrentStrokeToLayer() {
     const gl = glRef.current;
+
     if (!gl || !activeLayer || !brush || !strokeMaskRef.current) return;
     if (currentPoints.current.length < 2) return;
 
@@ -312,6 +318,20 @@ export function Canvas() {
         'max'
       );
     }
+
+    // DEBUG START — check what actually landed in the mask/layer after rendering
+    const targetFB = brush.type === 'eraser' ? activeLayer.framebuffer : strokeMaskRef.current!.framebuffer
+    const lastPoint = smoothed[smoothed.length - 1]
+    const testPixel = new Uint8Array(4)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFB)
+    gl.readPixels(
+      Math.floor(lastPoint.x),
+      Math.floor(gl.canvas.height - lastPoint.y),
+      1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
+    )
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    console.log('pixel after render:', testPixel, 'target size:', gl.canvas.width, gl.canvas.height, 'point:', lastPoint.x, lastPoint.y)
+    // DEBUG END
 
     compositeToScreen();
   }
@@ -376,13 +396,11 @@ export function Canvas() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    console.log('onPointerMove fired, isDrawing:', isDrawing.current, 'tool:', tool)
     if (!isDrawing.current) return;
 
     if (tool === 'airbrush') {
       const point = getPoint(e);
       airbrushPathPoints.current.push({ x: point.x, y: point.y, pressure: point.pressure, isPen: point.isPen });
-      console.log('pointer move - array length:', airbrushPathPoints.current.length, 'point:', point.x.toFixed(0), point.y.toFixed(0))
       return;  // interval timer handles actual rendering, not pointer move
     }
 
@@ -589,6 +607,7 @@ export function Canvas() {
       canvas.height = doc.metadata.height;
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+      recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
@@ -619,6 +638,7 @@ export function Canvas() {
       canvas.height = doc.metadata.height;
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+      recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
@@ -695,7 +715,6 @@ export function Canvas() {
   }
 
   async function handleQuickSave() {
-    console.log('handleQuickSave called', { projectId, activeBranchId, isDetached })
     if (!projectId || !activeBranchId || isDetached) return;
     setSaving(true);
 
@@ -806,21 +825,22 @@ export function Canvas() {
       const buffer = isHeadCommit
         ? await fetchCurrentState(projectId, activeBranchId)
         : await fetchSnapshot(projectId, viewingCommitId);
-      const doc    = await deserialiseDocumentCompressed(buffer)
-      const gl     = glRef.current!
-      const canvas = canvasRef.current!
+      const doc    = await deserialiseDocumentCompressed(buffer);
+      const gl     = glRef.current!;
+      const canvas = canvasRef.current!;
 
       if (canvas.width !== doc.metadata.width || canvas.height !== doc.metadata.height) {
-        canvas.width  = doc.metadata.width
-        canvas.height = doc.metadata.height
-        gl.viewport(0, 0, doc.metadata.width, doc.metadata.height)
-        setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height })
+        canvas.width  = doc.metadata.width;
+        canvas.height = doc.metadata.height;
+        gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
+        setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+        recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
       }
 
-      loadLayers(gl, doc.metadata, doc.layerPixels)
-      compositeToScreen()
+      loadLayers(gl, doc.metadata, doc.layerPixels);
+      compositeToScreen();
     } catch (err) {
-      console.error('Failed to revert preview:', err)
+      console.error('Failed to revert preview:', err);
     }
   }
 
@@ -872,6 +892,7 @@ export function Canvas() {
       canvas.height = doc.metadata.height;
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
+      recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);

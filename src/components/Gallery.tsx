@@ -6,6 +6,7 @@ import {
 } from "../api/projects";
 import { deserialiseDocumentCompressed } from "../utils/document";
 import { renameProject } from "../api/projects";
+import { fetchProjectThumbnail } from "../utils/thumbnail";
 
 export function Gallery() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export function Gallery() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
 
   async function loadProjects() {
     setLoading(true);
@@ -130,6 +132,29 @@ export function Gallery() {
       console.error('Rename failed:', err);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadThumbnails() {
+      for (const project of projects) {
+        if (thumbnails.has(project.id)) continue
+        const branchId = project.last_active_branch_id ?? project.main_branch_id
+
+        try {
+          const url = await fetchProjectThumbnail(project.id, branchId)
+          if (!cancelled) {
+            setThumbnails(prev => new Map(prev).set(project.id, url))
+          }
+        } catch {
+          // Leave unset — card falls back to the emoji placeholder
+        }
+      }
+    }
+
+    if (projects.length > 0) loadThumbnails()
+    return () => { cancelled = true }
+  }, [projects]);
 
   return (
     <div style={{
@@ -258,8 +283,17 @@ export function Gallery() {
                 background: '#f5f5f3', borderRadius: 6,
                 display: 'flex', alignItems: 'center',
                 justifyContent: 'center', fontSize: 28,
+                overflow: 'hidden',
               }}>
-                🎨
+                {thumbnails.has(project.id) ? (
+                  <img
+                    src={thumbnails.get(project.id)}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  '🎨'
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
