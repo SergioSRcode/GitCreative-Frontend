@@ -128,3 +128,10 @@ export async function fetchCurrentState(
 ): Promise<ArrayBuffer> {
   return apiClient.getBinary(`/projects/${projectId}/branches/${branchId}/current`);
 }
+
+export async function renameProject(
+  projectId: string,
+  name: string
+): Promise<{ project: { id: string; name: string } }> {
+  return apiClient.patch(`/projects/${projectId}`, { name });
+}

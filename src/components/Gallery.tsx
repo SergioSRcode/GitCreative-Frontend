@@ -5,6 +5,7 @@ import {
   type Project 
 } from "../api/projects";
 import { deserialiseDocumentCompressed } from "../utils/document";
+import { renameProject } from "../api/projects";
 
 export function Gallery() {
   const navigate = useNavigate();
@@ -14,6 +15,8 @@ export function Gallery() {
   const [newName, setNewName] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   async function loadProjects() {
     setLoading(true);
@@ -100,6 +103,31 @@ export function Gallery() {
     } catch (err) {
       console.error('Import failed: ', err);
       alert('File could not be imported - it may not be a valid .gitcreative file');
+    }
+  }
+
+  function startRenaming(project: Project, e: React.MouseEvent) {
+    e.stopPropagation();  // avoids triggering the card's "open project" click
+
+    setRenamingId(project.id);
+    setRenameValue(project.name);
+  }
+
+  async function commitRename(projectId: string) {
+    const trimmed = renameValue.trim();
+    setRenamingId(null);
+
+    if (!trimmed) return;  // ignores empty renames, revert silently
+
+    try {
+      await renameProject(projectId, trimmed);
+
+      setProjects(prev => prev.map(p =>
+        p.id === projectId ? { ...p, name: trimmed } : p
+      ));
+
+    } catch (err) {
+      console.error('Rename failed:', err);
     }
   }
 
@@ -236,7 +264,33 @@ export function Gallery() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{project.name}</span>
+                  {renamingId === project.id ? (
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onClick={e => e.stopPropagation()}
+                      onBlur={() => commitRename(project.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') commitRename(project.id)
+                        if (e.key === 'Escape') setRenamingId(null)
+                      }}
+                      autoFocus
+                      onFocus={e => e.target.select()}
+                      style={{
+                        fontSize: 14, fontWeight: 600, border: '1px solid #ddd',
+                        borderRadius: 4, padding: '2px 4px', width: '100%',
+                        outline: 'none',
+                      }}
+                    />
+                  ) : (
+                    <span
+                      onClick={e => startRenaming(project, e)}
+                      title="Click to rename"
+                      style={{ fontSize: 14, fontWeight: 600, cursor: 'text' }}
+                    >
+                      {project.name}
+                    </span>
+                  )}
                   <span style={{ fontSize: 11, color: '#aaa' }}>
                     {new Date(project.updated_at).toLocaleDateString()}
                   </span>
