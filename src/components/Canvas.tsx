@@ -298,7 +298,8 @@ export function Canvas() {
         stroke, brush,
         activeLayer.framebuffer,
         gl.canvas.width, gl.canvas.height,
-        'normal'
+        'normal',
+        ignorePressureForOpacity
       );
     } else {
       // Render into the mask with MAX blending — overlapping dabs within this

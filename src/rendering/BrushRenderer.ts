@@ -42,6 +42,7 @@ type ProgramSet = {
   localPosLoc: number,
   resolutionLoc: WebGLUniformLocation,
   colorLoc: WebGLUniformLocation | null,
+  hardLoc?: WebGLUniformLocation  // for eraser only
 };
 
 interface AirbrushProgramSet extends ProgramSet {
@@ -65,16 +66,16 @@ export class BrushRenderer {
     this.programs = {
       ink:    this.buildProgramSet(inkFragSrc),
       pencil: this.buildProgramSet(pencilFragSrc),
-      eraser: this.buildProgramSet(eraserFragSrc),
+      eraser: this.buildProgramSet(eraserFragSrc, true),
       airbrush: this.buildAirbrushProgramSet(airbrushFragSrc),  // needs hardness uniform
     };
   }
 
-  private buildProgramSet(fragSrc: string): ProgramSet {
+  private buildProgramSet(fragSrc: string, hasHardUniform = false): ProgramSet {
     const gl = this.gl;
     const program = createProgram(gl, dabVertSrc, fragSrc);
     
-    return {
+    const set: ProgramSet = {
       program,
       positionLoc:   gl.getAttribLocation(program, 'a_position'),
       localPosLoc:   gl.getAttribLocation(program, 'a_localPos'),
@@ -82,6 +83,10 @@ export class BrushRenderer {
       // eraser has no u_color uniform — guard for that
       colorLoc:      gl.getUniformLocation(program, 'u_color'),
     };
+
+    if (hasHardUniform) set.hardLoc = gl.getUniformLocation(program, 'u_hard')!;
+
+    return set;
   }
 
   private buildAirbrushProgramSet(fragSrc: string): AirbrushProgramSet {
@@ -103,7 +108,8 @@ export class BrushRenderer {
     targetFramebuffer: WebGLFramebuffer | null, 
     width: number, 
     height: number,
-    blendMode: 'normal' | 'max' = 'normal'
+    blendMode: 'normal' | 'max' = 'normal',
+    hardEraser: boolean = false
   ) {
     const gl = this.gl;
     const set = this.programs[brush.type];
@@ -130,6 +136,9 @@ export class BrushRenderer {
 
     if (set.colorLoc) {
       gl.uniform4f(set.colorLoc, ...brush.color, stroke.opacity);
+    }
+    if (set.hardLoc) {
+      gl.uniform1f(set.hardLoc, hardEraser ? 1.0 : 0.0);
     }
 
     // Build and upload geometry for every dab in this stroke
