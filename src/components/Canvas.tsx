@@ -83,6 +83,7 @@ export function Canvas() {
   const [viewingCommitId, setViewingCommitId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [ignorePressureForOpacity, setIgnorePressureForOpacity] = useState(true);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -278,7 +279,9 @@ export function Canvas() {
     const resampled = resample(currentPoints.current, spacing);
     const smoothed  = smooth(resampled, 1);
 
-    const avgPressure = smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
+    const avgPressure = ignorePressureForOpacity 
+      ? 1.0  // opacity always max matching slider
+      : smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
     
     const stroke: Stroke = {
       id: 'current',
@@ -1190,6 +1193,20 @@ export function Canvas() {
           onChange={setBrushOpacity}
           formatLabel={v => `${Math.round(v * 100)}%`}
         />
+
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          fontSize: 9, color: '#888', cursor: 'pointer',
+          userSelect: 'none', whiteSpace: 'nowrap',
+        }}>
+          <input
+            type="checkbox"
+            checked={ignorePressureForOpacity}
+            onChange={e => setIgnorePressureForOpacity(e.target.checked)}
+            style={{ width: 12, height: 12, cursor: 'pointer' }}
+          />
+          Fixed
+        </label>
       </div>
       
       {/* Brush size preview — centred on canvas, visible while interacting */}
