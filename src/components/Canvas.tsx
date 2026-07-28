@@ -291,26 +291,25 @@ export function Canvas() {
       opacity: brush.opacity * avgPressure,
     };
 
-    // Render into the mask with MAX blending — overlapping dabs within this
-    // stroke cap at the darkest single dab, never compounding past it
-    rendererRef.current!.render(
-      stroke, brush,
-      strokeMaskRef.current.framebuffer,
-      gl.canvas.width, gl.canvas.height,
-      'max'
-    );
-
-    // DEBUG START — read back a pixel from the mask to check its actual alpha
-    const lastPoint = smoothed[smoothed.length - 1]
-    const testPixel = new Uint8Array(4)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer)
-    gl.readPixels(
-      Math.floor(lastPoint.x),
-      Math.floor(gl.canvas.height - lastPoint.y), // flip Y — readPixels uses bottom-left origin
-      1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
-    )
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    // DEBUG END
+    // Eraser bypasses the mask entirely — it writes directly to the real
+    // layer using its own subtractive blend mode
+    if (brush.type === 'eraser') {
+      rendererRef.current!.render(
+        stroke, brush,
+        activeLayer.framebuffer,
+        gl.canvas.width, gl.canvas.height,
+        'normal'
+      );
+    } else {
+      // Render into the mask with MAX blending — overlapping dabs within this
+      // stroke cap at the darkest single dab, never compounding past it
+      rendererRef.current!.render(
+        stroke, brush,
+        strokeMaskRef.current.framebuffer,
+        gl.canvas.width, gl.canvas.height,
+        'max'
+      );
+    }
 
     compositeToScreen();
   }
@@ -413,7 +412,7 @@ export function Canvas() {
 
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
     const gl = glRef.current;
-    if (gl && activeLayer && strokeMaskRef.current) {
+    if (gl && activeLayer && strokeMaskRef.current && brush?.type !== 'eraser') {
       // Commit the finished stroke mask onto the real layer, once,
       // with normal alpha blending — safe from accumulation since
       // this is a single blend operation, not many overlapping dabs
