@@ -84,6 +84,7 @@ export function Canvas() {
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [ignorePressureForOpacity, setIgnorePressureForOpacity] = useState(true);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -823,6 +824,18 @@ export function Canvas() {
     }
   }
 
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const [exportMenuPos, setExportMenuPos] = useState({ top: 0, left: 0 });
+
+  function handleToggleExportMenu() {
+    if (!showExportMenu && exportButtonRef.current) {
+      const rect = exportButtonRef.current.getBoundingClientRect();
+      setExportMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+
+    setShowExportMenu(m => !m);
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     // guards agains React strict mode double-invocation in development
@@ -919,12 +932,22 @@ export function Canvas() {
       compositeToScreen();
     }
 
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-toolbar-dropdown]')) {
+        setShowExportMenu(false);
+        setShowPicker(false);
+      }
+    }
+
+    window.addEventListener('mousedown', handleClickOutside)
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousedown', handleClickOutside)
       if (airbrushTimer.current) clearInterval(airbrushTimer.current);
     }
   }, []); 
@@ -938,16 +961,18 @@ export function Canvas() {
 
   return (
     <>
-      {/* Toolbar */}
-      <div style={{
-        position: 'absolute', top: 10, left: 10, zIndex: 10,
-        background: 'white', border: '1px solid #ddd',
-        borderRadius: 10, padding: 12,
-        display: 'flex', flexDirection: 'column', gap: 10,
-        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-        width: 244,
-      }}>
-        {/* Back to Gallery button */}
+      {/* Panel 1 — Project context: Gallery, name, color — fixed top-left */}
+      <div
+        data-toolbar-dropdown
+        style={{
+          position: 'absolute', top: 10, left: 10, zIndex: 10,
+          background: 'white', border: '1px solid #ddd',
+          borderRadius: 10, padding: 10,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+          width: 150,
+        }}
+      >
         <button
           onClick={() => navigate('/gallery')}
           style={{
@@ -956,7 +981,7 @@ export function Canvas() {
             cursor: 'pointer', fontSize: 13,
           }}
         >← Gallery</button>
-        {/* Project name */}
+
         <input
           value={projectName}
           onChange={e => setProjectName(e.target.value)}
@@ -969,157 +994,12 @@ export function Canvas() {
           }}
         />
 
-        {/* Quick-save button */}
-        <button
-          onClick={handleQuickSave}
-          disabled={saving || isDetached}
-          title={isDetached ? 'Cannot save while viewing a past state' : 'Save (Cmd+S)'}
-          style={{
-            padding: '4px 0', borderRadius: 6,
-            border: '1px solid #ddd',
-            background: saving ? '#f8f8f8' : 'white',
-            cursor: isDetached ? 'default' : 'pointer',
-            fontSize: 13, opacity: isDetached ? 0.4 : 1,
-          }}
-        >
-          {saving ? 'Saving...' : '💾 Save'}
-          {lastSavedAt && !saving && (
-            <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>
-              {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-        </button>
-
-        {/* Export */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={handleProjectExport}
-            style={{
-              flex: 1, padding: '4px 0', borderRadius: 6,
-              border: '1px solid #ddd', background: 'white',
-              cursor: 'pointer', fontSize: 13,
-            }}
-          >⬇ Export</button>
-        </div>
-
-        {/* Undo / Redo */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={handleUndo}
-            disabled={!canUndo()}
-            style={{
-              flex: 1, padding: '4px 0', borderRadius: 6,
-              border: '1px solid #ddd',
-              background: canUndo() ? 'white' : '#f8f8f8',
-              color: canUndo() ? '#000' : '#bbb',
-              cursor: canUndo() ? 'pointer' : 'default',
-              fontSize: 13,
-            }}
-          >↩ Undo</button>
-          <button
-            onClick={handleRedo}
-            disabled={!canRedo()}
-            style={{
-              flex: 1, padding: '4px 0', borderRadius: 6,
-              border: '1px solid #ddd',
-              background: canRedo() ? 'white' : '#f8f8f8',
-              color: canRedo() ? '#000' : '#bbb',
-              cursor: canRedo() ? 'pointer' : 'default',
-              fontSize: 13,
-            }}
-          >↪ Redo</button>
-        </div>
-
-        {/* Tool selector*/}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => (
-            <button
-              key={t}
-              onClick={() => { setTool(t); setEyedropper(false) }}
-              style={{
-                flex: 1, padding: '4px 0', borderRadius: 6,
-                border: '1px solid #ddd',
-                background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
-                fontWeight: tool === t && !eyedropper ? 600 : 400,
-                cursor: 'pointer', fontSize: 12,
-              }}
-            >{t}</button>
-          ))}
-        </div>
-
-        {/* Fill tolerance slider — only visible while Fill tool is active */}
-        {tool === 'fill' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, color: '#888' }}>Fill tolerance</span>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button
-                onClick={() => setFillTolerance(t => Math.max(0, t - 1))}
-                aria-label="Decrease tolerance by 1"
-                style={{
-                  width: 18, height: 18, borderRadius: 4,
-                  border: '1px solid #ddd', background: 'white',
-                  cursor: 'pointer', fontSize: 11, lineHeight: 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, padding: 0,
-                }}
-              >−</button>
-
-              <input
-                type="range" min={0} max={255} step={1}
-                value={fillTolerance}
-                onChange={e => setFillTolerance(parseInt(e.target.value))}
-                aria-label="Fill tolerance"
-                style={{ flex: 1, minWidth: 0 }}
-              />
-
-              <button
-                onClick={() => setFillTolerance(t => Math.min(255, t + 1))}
-                aria-label="Increase tolerance by 1"
-                style={{
-                  width: 18, height: 18, borderRadius: 4,
-                  border: '1px solid #ddd', background: 'white',
-                  cursor: 'pointer', fontSize: 11, lineHeight: 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, padding: 0,
-                }}
-              >+</button>
-
-              <span style={{
-                fontSize: 11, color: '#888',
-                width: 26, flexShrink: 0,
-                textAlign: 'right',
-              }}>
-                {fillTolerance}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Airbrush variant dropdown => shows only when airbrush is active */}
-        {tool === 'airbrush' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 11, color: '#888' }}>Airbrush type</span>
-            <select
-              value={airbrushVariant}
-              onChange={e => setAirbrushVariant(e.target.value as AirbrushVariant)}
-              title="Airbrush hardness"
-              style={{ fontSize: 12, border: '1px solid #ddd', borderRadius: 4, padding: '3px 4px' }}
-            >
-              {AIRBRUSH_VARIANTS.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Color swatch + eyedropper */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', position: 'relative' }}>
           <div
             onClick={() => setShowPicker(p => !p)}
             title="Pick color"
             style={{
-              width: 32, height: 32, borderRadius: 6,
+              width: 28, height: 28, borderRadius: 6,
               background: currentHex,
               border: '1px solid rgba(0,0,0,0.15)',
               cursor: 'pointer', flexShrink: 0,
@@ -1127,42 +1007,141 @@ export function Canvas() {
           />
           <button
             onClick={() => setEyedropper(e => !e)}
+            title="Eyedropper"
             style={{
-              padding: '4px 10px', borderRadius: 6,
+              padding: '4px 8px', borderRadius: 6,
               border: '1px solid #ddd',
               background: eyedropper ? '#f0f0f0' : 'white',
-              cursor: 'pointer', fontSize: 13,
+              cursor: 'pointer', fontSize: 12,
             }}
-          >eyedropper</button>
-          <span style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>
-            {currentHex}
-          </span>
+          >💧</button>
         </div>
 
-        {/* Color picker */}
         {showPicker && (
-          <>
+          <div style={{
+            position: 'absolute', top: '100%', left: 60, zIndex: 20,
+            background: 'white', border: '1px solid #ddd', borderRadius: 10,
+            padding: 12, marginTop: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          }}>
             <ColorPicker color={hsvColor} onChange={setHsvColor} />
-            <RecentColors
-              colors={recentColors}
-              onSelect={c => setHsvColor(rgbToHsv(c))}
-            />
-          </>
+            <RecentColors colors={recentColors} onSelect={c => setHsvColor(rgbToHsv(c))} />
+          </div>
         )}
-        {/* Export */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['png', 'jpeg'] as ExportFormat[]).map(fmt => (
+      </div>
+
+      {/* Panel 2 — Active tools: export, save, undo/redo, tool selector + settings — top-center */}
+      <div
+        data-toolbar-dropdown
+        style={{
+          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
+          background: 'white', border: '1px solid #ddd',
+          borderRadius: 10, padding: 10,
+          display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 0,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+          maxWidth: '80vw',
+          overflowX: 'auto',
+        }}
+      >
+        {/* Export dropdown */}
+        <div style={{ padding: '0 12px', position: 'relative' }}>
+          <button
+            ref={exportButtonRef}
+            onClick={handleToggleExportMenu}
+            style={{
+              padding: '4px 12px', borderRadius: 6,
+              border: '1px solid #ddd', background: 'white',
+              cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
+            }}
+          >⬇ Export ▾</button>
+        </div>
+
+        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+
+        {/* Save */}
+        <div style={{ padding: '0 12px' }}>
+          <button
+            onClick={handleQuickSave}
+            disabled={saving || isDetached}
+            title={isDetached ? 'Cannot save while viewing a past state' : 'Save (Cmd+S)'}
+            style={{
+              padding: '4px 12px', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: saving ? '#f8f8f8' : 'white',
+              cursor: isDetached ? 'default' : 'pointer',
+              fontSize: 13, opacity: isDetached ? 0.4 : 1, whiteSpace: 'nowrap',
+            }}
+          >
+            💾 {saving ? 'Saving...' : 'Save'}
+            {lastSavedAt && !saving && (
+              <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>
+                {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+
+        {/* Undo/Redo */}
+        <div style={{ display: 'flex', gap: 6, padding: '0 12px', alignItems: 'flex-start' }}>
+          <button onClick={handleUndo} disabled={!canUndo()} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #ddd', background: canUndo() ? 'white' : '#f8f8f8', color: canUndo() ? '#000' : '#bbb', cursor: canUndo() ? 'pointer' : 'default', fontSize: 13 }}>↩</button>
+          <button onClick={handleRedo} disabled={!canRedo()} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #ddd', background: canRedo() ? 'white' : '#f8f8f8', color: canRedo() ? '#000' : '#bbb', cursor: canRedo() ? 'pointer' : 'default', fontSize: 13 }}>↪</button>
+        </div>
+
+        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+
+        {/* Tools */}
+        <div style={{ display: 'flex', gap: 6, padding: '0 12px', alignItems: 'flex-start' }}>
+          {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => (
             <button
-              key={fmt}
-              onClick={() => handleExport(fmt)}
+              key={t}
+              onClick={() => { setTool(t); setEyedropper(false) }}
+              title={t}
               style={{
-                flex: 1, padding: '4px 0', borderRadius: 6,
-                border: '1px solid #ddd', background: 'white',
-                cursor: 'pointer', fontSize: 13,
+                padding: '4px 10px', borderRadius: 6,
+                border: '1px solid #ddd',
+                background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
+                fontWeight: tool === t && !eyedropper ? 600 : 400,
+                cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
               }}
-            >export {fmt.toUpperCase()}</button>
+            >{t}</button>
           ))}
         </div>
+
+        {/* Tool-specific settings */}
+        {tool === 'airbrush' && (
+          <>
+            <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+            <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 110 }}>
+              <span style={{ fontSize: 11, color: '#888' }}>Airbrush type</span>
+              <select
+                value={airbrushVariant}
+                onChange={e => setAirbrushVariant(e.target.value as AirbrushVariant)}
+                title="Airbrush hardness"
+                style={{ fontSize: 12, border: '1px solid #ddd', borderRadius: 4, padding: '3px 4px' }}
+              >
+                {AIRBRUSH_VARIANTS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {tool === 'fill' && (
+          <>
+            <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+            <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+              <span style={{ fontSize: 11, color: '#888' }}>Fill tolerance</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button onClick={() => setFillTolerance(t => Math.max(0, t - 1))} aria-label="Decrease tolerance by 1" style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>−</button>
+                <input type="range" min={0} max={255} step={1} value={fillTolerance} onChange={e => setFillTolerance(parseInt(e.target.value))} aria-label="Fill tolerance" style={{ flex: 1, minWidth: 0 }} />
+                <button onClick={() => setFillTolerance(t => Math.min(255, t + 1))} aria-label="Increase tolerance by 1" style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>+</button>
+                <span style={{ fontSize: 11, color: '#888', width: 26, flexShrink: 0, textAlign: 'right' }}>{fillTolerance}</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
       <div style={{
         position: 'absolute',
@@ -1216,6 +1195,41 @@ export function Canvas() {
         canvasWidth={canvasPixelSize.width}
         canvasHeight={canvasPixelSize.height}
       />
+
+      {showExportMenu && (
+        <div
+          data-toolbar-dropdown
+          style={{
+            position: 'fixed',
+            top: exportMenuPos.top, left: exportMenuPos.left,
+            zIndex: 50,
+            background: 'white', border: '1px solid #ddd', borderRadius: 8,
+            padding: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140,
+          }}
+        >
+          <button 
+            onClick={() => { handleProjectExport(); setShowExportMenu(false) }} 
+            onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+            style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+            >📄 File (.gitcreative)</button>
+
+          <button 
+            onClick={() => { handleExport('png'); setShowExportMenu(false) }} 
+            onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+            style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+            >🖼 PNG</button>
+
+          <button 
+            onClick={() => { handleExport('jpeg'); setShowExportMenu(false) }} 
+            onMouseEnter={e => (e.currentTarget.style.background = '#f0f0f0')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+            style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+            >🖼 JPEG</button>
+        </div>
+      )}
 
       {/* Tab panel: Layers, commits, branches */}
       <RightPanel
