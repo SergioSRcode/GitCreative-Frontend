@@ -33,7 +33,8 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 // import { apiClient } from '../api/client';
 import { RightPanel } from './RightPanel';
 import { updateLastBranch } from '../api/projects';
-
+import type { Layer } from '../types/layer';
+import { createLayer } from '../rendering/createLayer';
 
 const MAX_RECENT = 10;
 
@@ -50,6 +51,7 @@ export function Canvas() {
   const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
   const thumbnailCache = useRef<Map<string, string>>(new Map());
   const previewingRef = useRef(false);
+  const strokeMaskRef = useRef<Layer | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -220,7 +222,7 @@ export function Canvas() {
     return {
       x:         (e.clientX - rect.left) * dpr,
       y:         (e.clientY - rect.top)  * dpr,
-      pressure:  e.pressure > 0 ? e.pressure : 0.5,
+      pressure:  e.pointerType === 'pen' ? e.pressure : (e.pressure > 0 ? e.pressure : 0.5),
       timeStamp: e.timeStamp,
     };
   }
@@ -228,6 +230,8 @@ export function Canvas() {
   function compositeToScreen() {
     const gl = glRef.current!;
     const canvas = canvasRef.current!;
+    const compositor = compositorRef.current;
+    if (!gl || !canvas || !compositor) return;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -237,11 +241,26 @@ export function Canvas() {
 
     for (const layer of layersRef.current) {
       if (!layer.visible) continue;
-      compositorRef.current!.drawLayer(layer, canvas.width, canvas.height);
+      compositor.drawLayer(layer, canvas.width, canvas.height);
+    }
+
+    // Overlay the in-progress stroke mask on top, purely for live preview —
+    // this never touches the actual layer texture, only the screen
+    if (strokeMaskRef.current && isDrawing.current) {
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+
+      compositor.blitDirect(
+        strokeMaskRef.current.texture,
+        1.0,
+        null,  // screen
+        canvas.width, canvas.height
+      );
     }
 
     // re-enables blending for any subsequent draw calls
     gl.enable(gl.BLEND);
+    gl.blendEquation(gl.FUNC_ADD);
     gl.blendFuncSeparate(
       gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
       gl.ONE,       gl.ONE_MINUS_SRC_ALPHA
@@ -250,14 +269,16 @@ export function Canvas() {
 
   function renderCurrentStrokeToLayer() {
     const gl = glRef.current;
-    if (!gl || !activeLayer || !brush) return;
+    if (!gl || !activeLayer || !brush || !strokeMaskRef.current) return;
     if (currentPoints.current.length < 2) return;
 
     const spacing   = Math.max(brush.size * 0.15, 1);
     const resampled = resample(currentPoints.current, spacing);
     const smoothed  = smooth(resampled, 1);
-    const avgPressure = smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
 
+    const avgPressure = smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
+    console.log('avgPressure for this segment:', avgPressure, 'points:', smoothed.map(p => p.pressure));
+    
     const stroke: Stroke = {
       id: 'current',
       points: smoothed,
@@ -266,11 +287,27 @@ export function Canvas() {
       opacity: brush.opacity * avgPressure,
     };
 
+    // Render into the mask with MAX blending — overlapping dabs within this
+    // stroke cap at the darkest single dab, never compounding past it
     rendererRef.current!.render(
       stroke, brush,
-      activeLayer.framebuffer,
-      gl.canvas.width, gl.canvas.height
+      strokeMaskRef.current.framebuffer,
+      gl.canvas.width, gl.canvas.height,
+      'max'
     );
+
+    // DEBUG START — read back a pixel from the mask to check its actual alpha
+    const lastPoint = smoothed[smoothed.length - 1]
+    const testPixel = new Uint8Array(4)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer)
+    gl.readPixels(
+      Math.floor(lastPoint.x),
+      Math.floor(gl.canvas.height - lastPoint.y), // flip Y — readPixels uses bottom-left origin
+      1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
+    )
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    console.log('mask pixel at drawn point:', testPixel, 'avgPressure:', avgPressure)
+    // DEBUG END
 
     compositeToScreen();
   }
@@ -307,9 +344,6 @@ export function Canvas() {
       return;
     }
 
-    canvasRef.current!.setPointerCapture(e.pointerId);
-    isDrawing.current = true;
-
     if (tool === 'airbrush') {
       const point = getPoint(e);
       airbrushPathPoints.current = [{ x: point.x, y: point.y, pressure: point.pressure }];
@@ -320,6 +354,16 @@ export function Canvas() {
       return;
     }
 
+    const gl = glRef.current;
+    if (gl && strokeMaskRef.current) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    canvasRef.current!.setPointerCapture(e.pointerId);
+    isDrawing.current = true;
     currentPoints.current = [getPoint(e)];
     pushRecentColor(rgb);
   }
@@ -360,8 +404,27 @@ export function Canvas() {
     currentPoints.current = [];
 
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
-    const gl = glRef.current!;
-    pushSnapshot(gl, layersRef.current);
+    const gl = glRef.current;
+    if (gl && activeLayer && strokeMaskRef.current) {
+      // Commit the finished stroke mask onto the real layer, once,
+      // with normal alpha blending — safe from accumulation since
+      // this is a single blend operation, not many overlapping dabs
+      compositorRef.current!.blitDirect(
+        strokeMaskRef.current.texture,
+        1.0,
+        activeLayer.framebuffer,
+        gl.canvas.width, gl.canvas.height
+      );
+
+      // Clear the mask so the next stroke starts fresh
+      gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    compositeToScreen();
+    pushSnapshot(gl!, layersRef.current);
   }
 
   async function refreshCommits(pid: string, bid: string) {
@@ -765,6 +828,10 @@ export function Canvas() {
     glRef.current = gl;
     rendererRef.current = new BrushRenderer(gl);
     compositorRef.current = new Compositor(gl);
+
+    // A reusable transparent buffer where the CURRENT stroke's dabs accumulate
+    // via MAX blending, kept separate from the real layer until the stroke finishes
+    strokeMaskRef.current = createLayer(gl, canvas.width, canvas.height, '__stroke_mask__');
 
     resizeCanvas(canvas);
     setCanvasPixelSize({ width: canvas.width, height: canvas.height });

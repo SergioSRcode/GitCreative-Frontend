@@ -1,5 +1,6 @@
 import vertSrc from '../shaders/composite.vert?raw';
 import fragSrc from '../shaders/composite.frag?raw';
+import blitFragSrc from '../shaders/blit.frag?raw';
 import type { Layer } from '../types/layer';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -15,9 +16,13 @@ function compileShader(gl: WebGL2RenderingContext, type: number, src: string): W
   return shader;
 }
 
-function createProgram(gl: WebGL2RenderingContext): WebGLProgram {
-  const vert = compileShader(gl, gl.VERTEX_SHADER, vertSrc);
-  const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+function createProgram(
+  gl: WebGL2RenderingContext,
+  vertSource: string,
+  fragSource: string
+): WebGLProgram {
+  const vert = compileShader(gl, gl.VERTEX_SHADER, vertSource);
+  const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSource);
   const program = gl.createProgram()!;
 
   gl.attachShader(program, vert);
@@ -50,10 +55,13 @@ export class Compositor {
   private blendModeLoc: WebGLUniformLocation;
   private backdropTexture: WebGLTexture;
   private backdropFramebuffer: WebGLFramebuffer;
+  private blitProgram: WebGLProgram;
+  private blitTextureLoc: WebGLUniformLocation;
+  private blitOpacityLoc: WebGLUniformLocation;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
-    this.program = createProgram(gl);
+    this.program = createProgram(gl, vertSrc, fragSrc);
 
     // full-screen quad in clip space - covers (-1, -1) to (1, 1)
     // two triangles make a rectangle
@@ -87,6 +95,11 @@ export class Compositor {
     this.backdropTexture = gl.createTexture()!;
     this.backdropFramebuffer = gl.createFramebuffer()!;
     this.initBackdrop(gl.canvas.width, gl.canvas.height);
+
+    // Second, simpler program specifically for blitDirect
+    this.blitProgram     = createProgram(gl, vertSrc, blitFragSrc) // reuses the same vertex shader
+    this.blitTextureLoc  = gl.getUniformLocation(this.blitProgram, 'u_texture')!
+    this.blitOpacityLoc  = gl.getUniformLocation(this.blitProgram, 'u_opacity')!
   }
 
   private initBackdrop(width: number, height: number) {
@@ -122,12 +135,51 @@ export class Compositor {
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
+  blitDirect(
+    texture: WebGLTexture,
+    opacity: number,
+    targetFramebuffer: WebGLFramebuffer | null,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer)
+    gl.viewport(0, 0, width, height)
+    gl.enable(gl.BLEND)
+    gl.blendEquation(gl.FUNC_ADD)
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+
+    gl.useProgram(this.blitProgram)  // new dedicated program, not this.program
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
+    gl.enableVertexAttribArray(this.positionLoc)
+    gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer)
+    gl.enableVertexAttribArray(this.texCoordLoc)
+    gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0)
+
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+    gl.uniform1i(this.blitTextureLoc, 0)
+
+    gl.uniform1f(this.blitOpacityLoc, opacity)
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+
   // Draws a single layer's texture onto whatever framebuffer is currently bound
-  drawLayer(layer: Layer, width: number, height: number) {
+  drawLayer(
+    layer: Layer, 
+    width: number, 
+    height: number, 
+    targetFramebuffer: WebGLFramebuffer | null = null  // defaults to screen
+  ) {
     const { gl } = this;
     this.captureBackdrop(width, height);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
     gl.viewport(0, 0, width, height);
     gl.useProgram(this.program);
 

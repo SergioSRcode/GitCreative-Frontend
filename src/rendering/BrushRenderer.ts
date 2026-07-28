@@ -96,18 +96,31 @@ export class BrushRenderer {
     }
   } 
 
-  render(stroke: Stroke, brush: Brush, targetFramebuffer: WebGLFramebuffer | null, width: number, height: number) {
+  render(
+    stroke: Stroke, 
+    brush: Brush, 
+    targetFramebuffer: WebGLFramebuffer | null, 
+    width: number, 
+    height: number,
+    blendMode: 'normal' | 'max' = 'normal'
+  ) {
     const gl = this.gl;
     const set = this.programs[brush.type];
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
     gl.viewport(0, 0, width, height);
 
-    // Eraser uses a different blend mode — it subtracts alpha rather than
-    // blending colour on top, effectively punching transparent holes
-    if (brush.type === 'eraser') {
+    if (blendMode === 'max') {
+      // Overlapping dabs within a single stroke take the MAX alpha per pixel,
+      // rather than stacking additively — this is what prevents a light stroke
+      // from self-darkening as it accumulates many overlapping dabs
+      gl.blendEquation(gl.MAX);
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else if (brush.type === 'eraser') {  // Eraser uses a different blend mode — it subtracts alpha 
+      gl.blendEquation(gl.FUNC_ADD);
       gl.blendFuncSeparate(gl.ZERO, gl.ONE, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
     } else {
+      gl.blendEquation(gl.FUNC_ADD);
       gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     }
 
@@ -115,7 +128,7 @@ export class BrushRenderer {
     gl.uniform2f(set.resolutionLoc, width, height);
 
     if (set.colorLoc) {
-      gl.uniform4f(set.colorLoc, ...brush.color, brush.opacity);
+      gl.uniform4f(set.colorLoc, ...brush.color, stroke.opacity);
     }
 
     // Build and upload geometry for every dab in this stroke
