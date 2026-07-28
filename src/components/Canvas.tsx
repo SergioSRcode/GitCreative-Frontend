@@ -48,7 +48,7 @@ export function Canvas() {
   const initializedRef = useRef(false);
   // const lastPointerPos = useRef<{ x: number; y: number; pressure: number } | null>(null);
   const airbrushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number }[]>([]);
+  const airbrushPathPoints = useRef<{ x: number; y: number; pressure: number, isPen: boolean }[]>([]);
   const thumbnailCache = useRef<Map<string, string>>(new Map());
   const previewingRef = useRef(false);
   const strokeMaskRef = useRef<Layer | null>(null);
@@ -162,7 +162,6 @@ export function Canvas() {
   }
 
   function airbrushTick() {
-    console.log('brush.size', brush!.size, 'dpr', window.devicePixelRatio, 'physical', physicalBrushSize);
     const gl = glRef.current;
     if (!gl || !activeLayer || !brush) return;
 
@@ -176,6 +175,7 @@ export function Canvas() {
       x: p.x, y: p.y,
       pressure: p.pressure,
       timeStamp: 0,
+      isPen: p.isPen,
     }));
 
     // resamples at a spacing relative to brush size
@@ -218,12 +218,14 @@ export function Canvas() {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const isPen = e.pointerType === 'pen';
 
     return {
       x:         (e.clientX - rect.left) * dpr,
       y:         (e.clientY - rect.top)  * dpr,
-      pressure:  e.pointerType === 'pen' ? e.pressure : (e.pressure > 0 ? e.pressure : 0.5),
+      pressure:  isPen ? e.pressure : (e.pressure > 0 ? e.pressure : 0.5),
       timeStamp: e.timeStamp,
+      isPen,
     };
   }
 
@@ -277,7 +279,6 @@ export function Canvas() {
     const smoothed  = smooth(resampled, 1);
 
     const avgPressure = smoothed.reduce((sum, p) => sum + p.pressure, 0) / smoothed.length;
-    console.log('avgPressure for this segment:', avgPressure, 'points:', smoothed.map(p => p.pressure));
     
     const stroke: Stroke = {
       id: 'current',
@@ -306,7 +307,6 @@ export function Canvas() {
       1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
     )
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    console.log('mask pixel at drawn point:', testPixel, 'avgPressure:', avgPressure)
     // DEBUG END
 
     compositeToScreen();
@@ -345,8 +345,11 @@ export function Canvas() {
     }
 
     if (tool === 'airbrush') {
+      canvasRef.current!.setPointerCapture(e.pointerId);
+      isDrawing.current = true;
+
       const point = getPoint(e);
-      airbrushPathPoints.current = [{ x: point.x, y: point.y, pressure: point.pressure }];
+      airbrushPathPoints.current = [{ x: point.x, y: point.y, pressure: point.pressure, isPen: point.isPen }];
       pushRecentColor(rgb);
 
       airbrushTick();
@@ -369,11 +372,13 @@ export function Canvas() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    console.log('onPointerMove fired, isDrawing:', isDrawing.current, 'tool:', tool)
     if (!isDrawing.current) return;
 
     if (tool === 'airbrush') {
       const point = getPoint(e);
-      airbrushPathPoints.current.push({ x: point.x, y: point.y, pressure: point.pressure });
+      airbrushPathPoints.current.push({ x: point.x, y: point.y, pressure: point.pressure, isPen: point.isPen });
+      console.log('pointer move - array length:', airbrushPathPoints.current.length, 'point:', point.x.toFixed(0), point.y.toFixed(0))
       return;  // interval timer handles actual rendering, not pointer move
     }
 

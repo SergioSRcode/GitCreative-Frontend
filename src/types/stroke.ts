@@ -4,6 +4,7 @@ export type StrokePoint = {
   y: number,  // canvas pixel y
   pressure: number,  // 0.0 -> 1.0
   timeStamp: number,  // ms since page load
+  isPen: boolean
 };
 
 // A complete stroke from pointerdown to pointer up

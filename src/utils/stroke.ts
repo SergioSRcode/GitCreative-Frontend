@@ -15,6 +15,7 @@ function lerp(a: StrokePoint, b: StrokePoint, t: number): StrokePoint {
     y:         a.y         + (b.y         - a.y)         * t,
     pressure:  a.pressure  + (b.pressure  - a.pressure)  * t,
     timeStamp: a.timeStamp + (b.timeStamp - a.timeStamp) * t,
+    isPen: a.isPen,  // boolean, no interpolation
   }
 }
 
@@ -73,6 +74,7 @@ export function smooth(points: StrokePoint[], passes: number = 2): StrokePoint[]
         y:         prev.y         * 0.25 + curr.y         * 0.5 + next.y         * 0.25,
         pressure:  prev.pressure  * 0.25 + curr.pressure  * 0.5 + next.pressure  * 0.25,
         timeStamp: curr.timeStamp,
+        isPen: curr.isPen,
       });
     }
 
@@ -81,4 +83,15 @@ export function smooth(points: StrokePoint[], passes: number = 2): StrokePoint[]
   }
 
   return result;
+}
+
+// Maps raw pressure (0-1) to a radius scale factor. Never reaches exactly 0 —
+// a real pen tip still makes SOME mark even at its lightest touch — and
+// ramps toward full size as pressure increases. The 0.3 floor and 0.7 range
+// are tunable constants controlling how dramatic the taper feels.
+export function pressureToRadiusScale(pressure: number): number {
+  const floor = 0.3;
+  const range = 0.7;
+
+  return floor + range * pressure;
 }

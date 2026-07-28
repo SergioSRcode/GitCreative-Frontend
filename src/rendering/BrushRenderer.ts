@@ -6,6 +6,7 @@ import inkFragSrc from '../shaders/ink.frag?raw';
 import pencilFragSrc from '../shaders/pencil.frag?raw';
 import eraserFragSrc from '../shaders/eraser.frag?raw';
 import airbrushFragSrc from '../shaders/airbrush.frag?raw';
+import { pressureToRadiusScale } from "../utils/stroke";
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -135,7 +136,9 @@ export class BrushRenderer {
     const allVerts: number[] = [];
 
     for (const point of stroke.points) {
-      const radius = brush.size / 2;
+      const radiusScale = point.isPen ? pressureToRadiusScale(point.pressure) : 1.0;
+      const radius = (brush.size / 2) * radiusScale;
+
       allVerts.push(...buildDabVertices(point, radius));
     }
 
@@ -160,7 +163,7 @@ export class BrushRenderer {
   // Deposits one airbrush dab at a single point, with a given tick alpha
   // (the per-tick deposit strength, already computed via asymptotic accumulation)
   renderAirbrushTick(
-    point: { x: number; y: number; pressure: number },
+    point: { x: number; y: number; pressure: number; isPen: boolean },
     hardness: number,
     tickAlpha: number,
     color: [number, number, number],
@@ -181,9 +184,10 @@ export class BrushRenderer {
     gl.uniform4f(set.colorLoc!, color[0], color[1], color[2], tickAlpha);
     gl.uniform1f(set.hardnessLoc, hardness);
 
-    const radius = size / 2;
+    const radiusScale = point.isPen ? pressureToRadiusScale(point.pressure) : 1.0;
+    const radius = size / 2 * radiusScale;
     const verts  = buildDabVertices(
-      { ...point, timeStamp: 0 },  // StrokePoint requires timeStamp — unused by dab geometry
+      { x: point.x, y: point.y, pressure: point.pressure, timeStamp: 0, isPen: point.isPen },
       radius
     );
 
