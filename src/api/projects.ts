@@ -135,3 +135,7 @@ export async function renameProject(
 ): Promise<{ project: { id: string; name: string } }> {
   return apiClient.patch(`/projects/${projectId}`, { name });
 }
+
+export async function getProject(projectId: string): Promise<{ project: Project }> {
+  return apiClient.get(`/projects/${projectId}`)
+}

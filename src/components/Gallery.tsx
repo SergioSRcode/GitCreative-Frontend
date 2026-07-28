@@ -7,6 +7,7 @@ import {
 import { deserialiseDocumentCompressed } from "../utils/document";
 import { renameProject } from "../api/projects";
 import { fetchProjectThumbnail } from "../utils/thumbnail";
+import { CANVAS_SIZE_PRESETS, resolveScreenSize } from '../types/canvasSize';
 
 export function Gallery() {
   const navigate = useNavigate();
@@ -19,6 +20,10 @@ export function Gallery() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
+  const [selectedPreset, setSelectedPreset] = useState(0); // index into CANVAS_SIZE_PRESETS
+  const [customWidth,  setCustomWidth]  = useState(1920);
+  const [customHeight, setCustomHeight] = useState(1080);
+  const [useCustomSize, setUseCustomSize] = useState(false);
 
   async function loadProjects() {
     setLoading(true);
@@ -43,11 +48,29 @@ export function Gallery() {
     setCreating(true);
 
     try {
-      // default canvas size - can be resized later
-      const { projectId, branchId } = await createProject(newName.trim(), 1920, 1080);
+      let width: number;
+      let height: number;
+
+      if (useCustomSize) {
+        width  = Math.max(1, customWidth);
+        height = Math.max(1, customHeight);
+      } else {
+        const preset = CANVAS_SIZE_PRESETS[selectedPreset];
+
+        if (preset.width === 0 && preset.height === 0) {
+          const screen = resolveScreenSize();
+          width  = screen.width;
+          height = screen.height;
+        } else {
+          width  = preset.width;
+          height = preset.height;
+        }
+      }
+
+      const { projectId, branchId } = await createProject(newName.trim(), width, height);
       navigate(`/projects/${projectId}/branches/${branchId}`);
     } catch (err) {
-      console.error('Failed to create project: ', err);
+      console.error('Failed to create project:', err);
     } finally {
       setCreating(false);
     }
@@ -211,32 +234,70 @@ export function Gallery() {
       {showNew && (
         <div style={{
           background: 'white', borderRadius: 10, padding: 16,
-          marginBottom: 24, display: 'flex', gap: 10,
-          alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          maxWidth: 480,
+          marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 10,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: 420,
         }}>
           <input
             value={newName}
             onChange={e => setNewName(e.target.value)}
             placeholder="Project name..."
             aria-label="New project name"
-            onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
             autoFocus
             style={{
-              flex: 1, border: '1px solid #ddd', borderRadius: 6,
+              border: '1px solid #ddd', borderRadius: 6,
               padding: '7px 10px', fontSize: 13, outline: 'none',
             }}
           />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 11, color: '#888' }}>Canvas size</span>
+            <select
+              value={useCustomSize ? 'custom' : selectedPreset}
+              onChange={e => {
+                if (e.target.value === 'custom') {
+                  setUseCustomSize(true)
+                } else {
+                  setUseCustomSize(false)
+                  setSelectedPreset(Number(e.target.value))
+                }
+              }}
+              style={{ fontSize: 13, border: '1px solid #ddd', borderRadius: 6, padding: '6px 8px' }}
+            >
+              {CANVAS_SIZE_PRESETS.map((preset, i) => (
+                <option key={preset.name} value={i}>{preset.name}</option>
+              ))}
+              <option value="custom">Custom size...</option>
+            </select>
+          </div>
+
+          {useCustomSize && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="number" min={1}
+                value={customWidth}
+                onChange={e => setCustomWidth(parseInt(e.target.value) || 1)}
+                aria-label="Custom width"
+                style={{ flex: 1, border: '1px solid #ddd', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+              />
+              <span style={{ color: '#888', fontSize: 13 }}>×</span>
+              <input
+                type="number" min={1}
+                value={customHeight}
+                onChange={e => setCustomHeight(parseInt(e.target.value) || 1)}
+                aria-label="Custom height"
+                style={{ flex: 1, border: '1px solid #ddd', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+              />
+            </div>
+          )}
+
           <button
             onClick={handleCreate}
             disabled={creating || !newName.trim()}
             style={{
-              padding: '7px 16px', borderRadius: 6,
-              border: 'none',
+              padding: '7px 16px', borderRadius: 6, border: 'none',
               background: newName.trim() && !creating ? '#222' : '#ccc',
-              color: 'white',
-              cursor: newName.trim() && !creating ? 'pointer' : 'default',
-              fontSize: 13, fontWeight: 600, flexShrink: 0,
+              color: 'white', cursor: newName.trim() && !creating ? 'pointer' : 'default',
+              fontSize: 13, fontWeight: 600,
             }}
           >
             {creating ? 'Creating...' : 'Create'}

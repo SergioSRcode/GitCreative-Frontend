@@ -32,7 +32,7 @@ import { createCommit, listCommits, listBranchCommits, fetchSnapshot,
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 // import { apiClient } from '../api/client';
 import { RightPanel } from './RightPanel';
-import { updateLastBranch } from '../api/projects';
+import { updateLastBranch, getProject } from '../api/projects';
 import type { Layer } from '../types/layer';
 import { createLayer } from '../rendering/createLayer';
 
@@ -143,6 +143,7 @@ export function Canvas() {
         gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
         setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
         recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+        fitCanvasToScreen(canvas);
 
         loadLayers(gl, doc.metadata, doc.layerPixels);
         setProjectName(doc.metadata.name);
@@ -156,7 +157,23 @@ export function Canvas() {
         compositeToScreen();
         pushSnapshot(gl, layersRef.current);
       } catch {
-        // No snapshot exists yet — brand new branch, keep the blank canvas from init()
+        // No snapshot exists yet — a brand new project/branch.
+        // Fetch the project's own stored dimensions and initialize a real blank canvas.
+        const { project } = await getProject(pid);
+        const gl     = glRef.current!;
+        const canvas = canvasRef.current!;
+
+        canvas.width  = project.width;
+        canvas.height = project.height;
+        gl.viewport(0, 0, project.width, project.height);
+        setCanvasPixelSize({ width: project.width, height: project.height });
+        recreateStrokeMask(gl, project.width, project.height);
+        fitCanvasToScreen(canvas);
+
+        init(gl, project.width, project.height);
+        setProjectName(project.name);
+        pushSnapshot(gl, layersRef.current);
+        compositeToScreen();
       }
       // if no commits exist yet => start with blank canvas
     } catch (err) {
@@ -209,27 +226,39 @@ export function Canvas() {
     compositeToScreen();
   }
 
-  function resizeCanvas(canvas: HTMLCanvasElement) {
-    const dpr = window.devicePixelRatio || 1;
-    const displayWidth = Math.round(canvas.clientWidth * dpr);
-    const displayHeight = Math.round(canvas.clientHeight * dpr);
+  function fitCanvasToScreen(canvas: HTMLCanvasElement) {
+    const docWidth  = canvas.width;
+    const docHeight = canvas.height;
+    if (docWidth === 0 || docHeight === 0) return;
 
-    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-      canvas.width = displayWidth;
-      canvas.height = displayHeight;
-      setCanvasPixelSize({ width: displayWidth, height: displayHeight });
-    }
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    // Scale to fit within the viewport while preserving aspect ratio —
+    // never stretch, never crop, just find the largest size that fits
+    const scale = Math.min(viewportW / docWidth, viewportH / docHeight);
+
+    const displayWidth  = docWidth  * scale;
+    const displayHeight = docHeight * scale;
+
+    canvas.style.width  = `${displayWidth}px`;
+    canvas.style.height = `${displayHeight}px`;
   }
 
   function getPoint(e: React.PointerEvent<HTMLCanvasElement>): StrokePoint {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
     const isPen = e.pointerType === 'pen';
 
+    // Convert from on-screen CSS pixels to the document's internal pixel
+    // buffer coordinates — this single scale factor absorbs both DPR and
+    // any fit-to-screen scaling, since both just mean "internal pixels per CSS pixel"
+    const scaleX = canvas.width  / rect.width;
+    const scaleY = canvas.height / rect.height;
+
     return {
-      x:         (e.clientX - rect.left) * dpr,
-      y:         (e.clientY - rect.top)  * dpr,
+      x:         (e.clientX - rect.left) * scaleX,
+      y:         (e.clientY - rect.top)  * scaleY,
       pressure:  isPen ? e.pressure : (e.pressure > 0 ? e.pressure : 0.5),
       timeStamp: e.timeStamp,
       isPen,
@@ -608,6 +637,7 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      fitCanvasToScreen(canvas);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
@@ -639,6 +669,7 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      fitCanvasToScreen(canvas);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
@@ -835,6 +866,7 @@ export function Canvas() {
         gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
         setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
         recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+        fitCanvasToScreen(canvas);
       }
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
@@ -872,13 +904,13 @@ export function Canvas() {
 
     // A reusable transparent buffer where the CURRENT stroke's dabs accumulate
     // via MAX blending, kept separate from the real layer until the stroke finishes
-    strokeMaskRef.current = createLayer(gl, canvas.width, canvas.height, '__stroke_mask__');
+    strokeMaskRef.current = createLayer(gl, canvas.width || 1, canvas.height || 1, '__stroke_mask__');
 
-    resizeCanvas(canvas);
-    setCanvasPixelSize({ width: canvas.width, height: canvas.height });
-    init(gl, canvas.width, canvas.height);
-    pushSnapshot(gl, layersRef.current);
-    compositeToScreen();
+    // resizeCanvas(canvas);
+    // setCanvasPixelSize({ width: canvas.width, height: canvas.height });
+    // init(gl, canvas.width, canvas.height);
+    // pushSnapshot(gl, layersRef.current);
+    // compositeToScreen();
 
     // Handles an imported .gitcreative file (from Gallery import) if present,
     // otherwise loads the project normally from the URL
@@ -893,7 +925,9 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      fitCanvasToScreen(canvas);
 
+      init(gl, doc.metadata.width, doc.metadata.height);
       loadLayers(gl, doc.metadata, doc.layerPixels);
       setProjectName(doc.metadata.name);
       compositeToScreen();
@@ -919,7 +953,7 @@ export function Canvas() {
     if (importedDoc) {
       applyImportedDoc(importedDoc);
     } else if (urlProjectId) {
-      loadProject(urlProjectId, urlBranchId);
+      Promise.resolve().then(() => loadProject(urlProjectId, urlBranchId));
     }
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -949,7 +983,7 @@ export function Canvas() {
     }
 
     function handleResize() {
-      resizeCanvas(canvas);
+      fitCanvasToScreen(canvasRef.current!);
       compositeToScreen();
     }
 
@@ -1280,18 +1314,26 @@ export function Canvas() {
       />
 
       {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: 'block', width: '100vw', height: '100vh',
-          touchAction: 'none',
-          cursor: eyedropper ? 'crosshair' : tool === 'fill' ? 'cell' : 'default',
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      />
+      <div style={{
+        position: 'fixed', inset: 0,
+        background: '#2a2a2a',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+      }}>
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: 'block',
+            touchAction: 'none',
+            cursor: eyedropper ? 'crosshair' : tool === 'fill' ? 'cell' : 'default',
+            // width/height are set programmatically via fitCanvasToScreen, not here
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        />
+      </div>
     </>
   );
 }
