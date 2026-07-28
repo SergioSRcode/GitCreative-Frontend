@@ -52,6 +52,8 @@ export function Canvas() {
   const thumbnailCache = useRef<Map<string, string>>(new Map());
   const previewingRef = useRef(false);
   const strokeMaskRef = useRef<Layer | null>(null);
+  const isPanningRef = useRef(false);
+  const panStartRef   = useRef({ clientX: 0, clientY: 0, panX: 0, panY: 0 });
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -85,6 +87,10 @@ export function Canvas() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [ignorePressureForOpacity, setIgnorePressureForOpacity] = useState(true);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [zoom, setZoom] = useState(1);               // 1 = 100%, independent of fit-to-screen scale
+  const [pan,  setPan]  = useState({ x: 0, y: 0 });  // CSS pixel offset
+  const [isPanMode, setIsPanMode] = useState(false); // hand-drag tool toggle
+  const [isPanningActive, setIsPanningActive] = useState(false);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -375,6 +381,18 @@ export function Canvas() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (isPanMode) {
+      canvasRef.current!.setPointerCapture(e.pointerId)
+      isPanningRef.current = true
+      setIsPanningActive(true)
+      panStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        panX: pan.x,
+        panY: pan.y,
+      }
+      return
+    }
     // Blocks drawing in detached HEAD (view only) state
     if (isDetached) return;
 
@@ -425,6 +443,20 @@ export function Canvas() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (isPanMode) {
+      if (!isPanningRef.current) return;
+
+      const dx = e.clientX - panStartRef.current.clientX;
+      const dy = e.clientY - panStartRef.current.clientY;
+
+      setPan({
+        x: panStartRef.current.panX + dx,
+        y: panStartRef.current.panY + dy,
+      });
+
+      return;
+    }
+
     if (!isDrawing.current) return;
 
     if (tool === 'airbrush') {
@@ -439,6 +471,13 @@ export function Canvas() {
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (isPanMode) {
+      isPanningRef.current = false;
+      setIsPanningActive(false);
+
+      return;
+    }
+
     if (!isDrawing.current) return;
     isDrawing.current = false;
 
@@ -1138,7 +1177,7 @@ export function Canvas() {
           {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => (
             <button
               key={t}
-              onClick={() => { setTool(t); setEyedropper(false) }}
+              onClick={() => { setTool(t); setEyedropper(false); setIsPanMode(false) }}
               title={t}
               style={{
                 padding: '4px 10px', borderRadius: 6,
@@ -1185,6 +1224,19 @@ export function Canvas() {
             </div>
           </>
         )}
+
+        {/* Pan/drag tool — always last in the row */}
+        <button
+          onClick={() => { setIsPanMode(m => !m); setEyedropper(false) }}
+          title="Drag canvas (pan)"
+          style={{
+            padding: '4px 10px', borderRadius: 6,
+            border: '1px solid #ddd',
+            background: isPanMode ? '#f0f0f0' : 'white',
+            fontWeight: isPanMode ? 600 : 400,
+            cursor: 'pointer', fontSize: 12,
+          }}
+        >✋</button>
       </div>
       <div style={{
         position: 'absolute',
@@ -1313,6 +1365,37 @@ export function Canvas() {
         onDeleteBranch={handleDeleteBranch}
       />
 
+      {/* Zoom Slider */}
+      <div style={{
+        position: 'absolute', bottom: 16, left: 16, zIndex: 10,
+        background: 'white', border: '1px solid #ddd',
+        borderRadius: 10, padding: '10px 14px',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        width: 220,
+      }}>
+        <span style={{ fontSize: 12, color: '#888' }}>🔍</span>
+        <input
+          type="range"
+          min={0.25} max={4} step={0.05}
+          value={zoom}
+          onChange={e => setZoom(parseFloat(e.target.value))}
+          aria-label="Zoom level"
+          style={{ flex: 1 }}
+        />
+        <span style={{ fontSize: 11, color: '#888', minWidth: 40, textAlign: 'right' }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
+          title="Reset zoom and pan"
+          style={{
+            fontSize: 11, color: '#888', border: 'none', background: 'none',
+            cursor: 'pointer', padding: '2px 4px',
+          }}
+        >reset</button>
+      </div>
+
       {/* Canvas */}
       <div style={{
         position: 'fixed', inset: 0,
@@ -1325,8 +1408,11 @@ export function Canvas() {
           style={{
             display: 'block',
             touchAction: 'none',
-            cursor: eyedropper ? 'crosshair' : tool === 'fill' ? 'cell' : 'default',
-            // width/height are set programmatically via fitCanvasToScreen, not here
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            cursor: isPanMode
+              ? (isPanningActive ? 'grabbing' : 'grab')
+              : eyedropper ? 'crosshair' : tool === 'fill' ? 'cell' : 'default',
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
