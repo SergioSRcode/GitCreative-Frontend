@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { CommitSummary, Branch } from "../api/projects";
+import { useComparisonImageSize } from "../hooks/useComparisonImageSize";
 
 type Props = {
   commits: CommitSummary[],  // selected in selection order
@@ -17,19 +18,20 @@ export function ComparisonOverlay({
 }: Props) {
   const [images, setImages] = useState<Map<string, string>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const gridContainerRef = useRef<HTMLDivElement>(null);
 
   const commitBranchMap = buildCommitBranchMap(allCommits, branches);
-  // Roughly scale target image size down as more commits are compared,
-  // so a single image gets generous space and many images still fit reasonably
-  function targetImageSize(count: number): number {
-    if (count <= 1) return 1080;
-    if (count <= 2) return 720;
-    if (count <= 4) return 630;
-    if (count <= 6) return 320;
-    return 180;
-  }
 
-  const imageSize = targetImageSize(commits.length);
+  // function targetImageSize(count: number): number {
+  //   if (count <= 1) return 1080;
+  //   if (count <= 2) return 720;
+  //   if (count <= 4) return 630;
+  //   if (count <= 6) return 320;
+  //   return 180;
+  // }
+
+  // const imageSize = targetImageSize(commits.length);
+  const imageSize = useComparisonImageSize(commits.length, gridContainerRef);
   // fetches a larger render for any commit not already cached
   useEffect(() => {
     let cancelled = false;
@@ -139,17 +141,19 @@ export function ComparisonOverlay({
           >✕</button>
         </div>
 
-        <div style={{
-          flex: 1, overflow: 'auto', padding: 20,
-          // display: 'grid',
-          // gridTemplateColumns: `repeat(auto-fit, minmax(${Math.min(imageSize, 200)}px, ${imageSize}px))`,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 16,
-          alignContent: 'flex-start',
-          // transition: 'grid-template-columns 0.25s ease',
-          justifyContent: 'center',
-        }}>
+        <div 
+          ref={gridContainerRef}
+          style={{
+            flex: 1, overflow: 'auto', padding: 20,
+            // display: 'grid',
+            // gridTemplateColumns: `repeat(auto-fit, minmax(${Math.min(imageSize, 200)}px, ${imageSize}px))`,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 16,
+            alignContent: 'flex-start',
+            // transition: 'grid-template-columns 0.25s ease',
+            justifyContent: 'center',
+          }}>
           {commits.map(commit => {
             const cacheKey = `${commit.id}_${imageSize}`
             const img   = images.get(cacheKey)
