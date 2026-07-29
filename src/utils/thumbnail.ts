@@ -16,12 +16,21 @@ export async function fetchProjectThumbnail(
   const buffer = await fetchCurrentState(projectId, branchId);
   const doc    = await deserialiseDocumentCompressed(buffer);
 
+  const docW = doc.metadata.width;
+  const docH = doc.metadata.height;
+  const scale = Math.min(THUMB_SIZE.w / docW, THUMB_SIZE.h / docH);
+  const outW  = Math.round(docW * scale);
+  const outH  = Math.round(docH * scale);
+
   const offscreen = document.createElement('canvas');
   offscreen.width  = THUMB_SIZE.w;
   offscreen.height = THUMB_SIZE.h;
   const ctx = offscreen.getContext('2d')!;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, THUMB_SIZE.w, THUMB_SIZE.h);
+
+  const offsetX = (THUMB_SIZE.w - outW) / 2;
+  const offsetY = (THUMB_SIZE.h - outH) / 2;
 
   // Composites every visible layer, bottom to top — a simple approximation
   // of the real WebGL compositor (no blend modes), good enough for a thumbnail
@@ -30,20 +39,20 @@ export async function fetchProjectThumbnail(
     const pixels = doc.layerPixels.get(layerMeta.id);
     if (!pixels) continue;
 
-    const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height);
+    const flipped = flipVertically(pixels, docW, docH);
 
     const layerCanvas = document.createElement('canvas');
-    layerCanvas.width  = doc.metadata.width;
-    layerCanvas.height = doc.metadata.height;
+    layerCanvas.width  = docW;
+    layerCanvas.height = docH;
     const layerCtx = layerCanvas.getContext('2d')!;
     const imageData = new ImageData(
-      new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height
+      new Uint8ClampedArray(flipped), docW, docH
     );
     layerCtx.putImageData(imageData, 0, 0);
 
     ctx.globalCompositeOperation = blendModeToComposite[layerMeta.blendMode] ?? 'source-over';
     ctx.globalAlpha = layerMeta.opacity;
-    ctx.drawImage(layerCanvas, 0, 0, THUMB_SIZE.w, THUMB_SIZE.h);
+    ctx.drawImage(layerCanvas, offsetX, offsetY, outW, outH);
   }
 
   ctx.globalCompositeOperation = 'source-over';

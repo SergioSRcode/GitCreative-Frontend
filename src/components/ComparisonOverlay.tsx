@@ -10,7 +10,7 @@ type Props = {
   onFetchThumbnail: (commitId: string, size?: { w: number; h: number }) => Promise<string>,
 };
 
-const RENDER_SIZE = { w: 480, h: 360 };
+// const RENDER_SIZE = { w: 480, h: 360 };
 
 export function ComparisonOverlay({
   commits, allCommits, branches, onClose, onRemove, onFetchThumbnail,
@@ -19,20 +19,32 @@ export function ComparisonOverlay({
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
   const commitBranchMap = buildCommitBranchMap(allCommits, branches);
+  // Roughly scale target image size down as more commits are compared,
+  // so a single image gets generous space and many images still fit reasonably
+  function targetImageSize(count: number): number {
+    if (count <= 1) return 1080;
+    if (count <= 2) return 720;
+    if (count <= 4) return 630;
+    if (count <= 6) return 320;
+    return 180;
+  }
+
+  const imageSize = targetImageSize(commits.length);
   // fetches a larger render for any commit not already cached
   useEffect(() => {
     let cancelled = false;
 
     async function loadMissing() {
       for (const commit of commits) {
-        if (images.has(commit.id) || loadingIds.has(commit.id)) continue;
+        const cacheKey = `${commit.id}_${imageSize}`;
+        if (images.has(cacheKey) || loadingIds.has(cacheKey)) continue;
 
-        setLoadingIds(prev => new Set(prev).add(commit.id));
+        setLoadingIds(prev => new Set(prev).add(cacheKey));
 
         try {
-          const url = await onFetchThumbnail(commit.id, RENDER_SIZE);
+          const url = await onFetchThumbnail(commit.id, { w: imageSize, h: imageSize});
           if (!cancelled) {
-            setImages(prev => new Map(prev).set(commit.id, url));
+            setImages(prev => new Map(prev).set(cacheKey, url));
           }
         } catch {
           // unset - cell shows a fallback
@@ -40,7 +52,7 @@ export function ComparisonOverlay({
           if (!cancelled) {
             setLoadingIds(prev => {
               const next = new Set(prev);
-              next.delete(commit.id);
+              next.delete(cacheKey);
 
               return next;
             });
@@ -50,10 +62,10 @@ export function ComparisonOverlay({
     }
     loadMissing();
     return () => { cancelled = true };
-  }, [commits]);
+  }, [commits, imageSize]);
 
   // auto-fits column count - roughly square grid: 4 -> 2 cols, 6 -> 3 cols...
-  const columns = Math.max(1, Math.ceil(Math.sqrt(commits.length)));
+  // const columns = Math.max(1, Math.ceil(Math.sqrt(commits.length)));
 
   // function branchNameFor(commit: CommitSummary): { name: string; color: string } | null {
   //   const owning = branches.find(b => b.head_commit_id === commit.id);
@@ -129,14 +141,18 @@ export function ComparisonOverlay({
 
         <div style={{
           flex: 1, overflow: 'auto', padding: 20,
-          display: 'grid',
-          gridTemplateColumns: `repeat(${columns}, 1fr)`,
+          // display: 'grid',
+          // gridTemplateColumns: `repeat(auto-fit, minmax(${Math.min(imageSize, 200)}px, ${imageSize}px))`,
+          display: "flex",
+          flexWrap: "wrap",
           gap: 16,
-          alignContent: 'start',
-          transition: 'grid-template-columns 0.25s ease',
+          alignContent: 'flex-start',
+          // transition: 'grid-template-columns 0.25s ease',
+          justifyContent: 'center',
         }}>
           {commits.map(commit => {
-            const img   = images.get(commit.id)
+            const cacheKey = `${commit.id}_${imageSize}`
+            const img   = images.get(cacheKey)
             const labels = commitBranchMap.get(commit.id) ?? [];
 
             return (
@@ -147,16 +163,18 @@ export function ComparisonOverlay({
                   overflow: 'hidden', display: 'flex', flexDirection: 'column',
                   transition: 'all 0.25s ease',
                   animation: 'fadeIn 0.2s ease',
+                  // alignSelf: 'start',
                 }}
               >
                 <div style={{
-                  aspectRatio: `${RENDER_SIZE.w} / ${RENDER_SIZE.h}`,
+                  // aspectRatio: `${RENDER_SIZE.w} / ${RENDER_SIZE.h}`,
                   background: '#f5f5f3',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   position: 'relative',
+                  // minHeight: 150,
                 }}>
                   {img ? (
-                    <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    <img src={img} alt="" style={{ maxWidth: imageSize, maxHeight: imageSize, width: 'auto', height: 'auto', display: 'block' }} />
                   ) : (
                     <span style={{ fontSize: 12, color: '#ccc' }}>Loading...</span>
                   )}
