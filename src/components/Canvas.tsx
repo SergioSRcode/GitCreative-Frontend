@@ -845,50 +845,49 @@ export function Canvas() {
   });
 
   async function handleFetchThumbnail(
-    commitId: string, 
+    commitId: string,
     size: { w: number; h: number } = { w: 200, h: 150 }
   ): Promise<string> {
-    const cacheKey = `${commitId}_${size.w}x${size.h}`;
+    const cacheKey = `${commitId}_${size.w}x${size.h}`
     if (thumbnailCache.current.has(cacheKey)) {
-      return thumbnailCache.current.get(cacheKey)!;
+      return thumbnailCache.current.get(cacheKey)!
     }
 
-    const buffer = await fetchSnapshot(projectId, commitId);
-    const doc = await deserialiseDocumentCompressed(buffer);
+    const buffer = await fetchSnapshot(projectId, commitId)
+    const doc    = await deserialiseDocumentCompressed(buffer)
 
-    // renders a quicke composite to an offscreen canvas for the thumbnail
-    const offscreen = document.createElement('canvas');
-    offscreen.width = size.w;
-    offscreen.height = size.h;
-    const ctx = offscreen.getContext('2d')!;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, size.w, size.h);
+    const offscreen = document.createElement('canvas')
+    offscreen.width  = size.w
+    offscreen.height = size.h
+    const ctx = offscreen.getContext('2d')!
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, size.w, size.h)
 
-    // draws the top layers pixels scaled down
-    if (doc.metadata.layers.length > 0) {
-      const topLayerMeta = doc.metadata.layers[doc.metadata.layers.length - 1];
-      const pixels = doc.layerPixels.get(topLayerMeta.id);
+    // Composites EVERY visible layer, bottom to top
+    for (const layerMeta of doc.metadata.layers) {
+      if (!layerMeta.visible) continue
+      const pixels = doc.layerPixels.get(layerMeta.id)
+      if (!pixels) continue
 
-      if (pixels) {
-        const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height);
+      const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height)
 
-        const layerCanvas = document.createElement('canvas');
-        layerCanvas.width = doc.metadata.width;
-        layerCanvas.height = doc.metadata.height;
+      const layerCanvas = document.createElement('canvas')
+      layerCanvas.width  = doc.metadata.width
+      layerCanvas.height = doc.metadata.height
+      const layerCtx = layerCanvas.getContext('2d')!
+      const imageData = new ImageData(
+        new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height
+      )
+      layerCtx.putImageData(imageData, 0, 0)
 
-        const layerCtx = layerCanvas.getContext('2d')!;
-        const imageData = new ImageData(
-          new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height
-        );
-        layerCtx.putImageData(imageData, 0, 0);
-        ctx.drawImage(layerCanvas, 0, 0, size.w, size.h);
-      }
+      ctx.globalAlpha = layerMeta.opacity
+      ctx.drawImage(layerCanvas, 0, 0, size.w, size.h)
+      ctx.globalAlpha = 1.0
     }
 
-    const url = offscreen.toDataURL('image/png');
-    thumbnailCache.current.set(commitId, url);
-
-    return url;
+    const url = offscreen.toDataURL('image/png')
+    thumbnailCache.current.set(cacheKey, url)
+    return url
   }
 
   async function handleTimelinePreview(commit: CommitSummary) {
