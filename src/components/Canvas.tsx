@@ -35,6 +35,7 @@ import { RightPanel } from './RightPanel';
 import { updateLastBranch, getProject } from '../api/projects';
 import type { Layer } from '../types/layer';
 import { createLayer } from '../rendering/createLayer';
+import { HorizontalBar } from './HorizontalBar';
 
 const MAX_RECENT = 10;
 
@@ -1368,29 +1369,30 @@ export function Canvas() {
       {/* Zoom Slider */}
       <div style={{
         position: 'absolute', bottom: 16, left: 16, zIndex: 10,
-        background: 'white', border: '1px solid #ddd',
-        borderRadius: 10, padding: '10px 14px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         display: 'flex', alignItems: 'center', gap: 10,
-        width: 220,
       }}>
-        <span style={{ fontSize: 12, color: '#888' }}>🔍</span>
-        <input
-          type="range"
-          min={0.25} max={4} step={0.05}
+        <span style={{
+          fontSize: 12, color: 'white',
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',  // readable against the dark grey canvas backdrop
+        }}>🔍</span>
+
+        <HorizontalBar
           value={zoom}
-          onChange={e => setZoom(parseFloat(e.target.value))}
-          aria-label="Zoom level"
-          style={{ flex: 1 }}
+          min={0.25}
+          max={4}
+          step={0.05}
+          onChange={setZoom}
+          formatLabel={v => `${Math.round(v * 100)}%`}
+          width={150}
         />
-        <span style={{ fontSize: 11, color: '#888', minWidth: 40, textAlign: 'right' }}>
-          {Math.round(zoom * 100)}%
-        </span>
+
         <button
           onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
           title="Reset zoom and pan"
           style={{
-            fontSize: 11, color: '#888', border: 'none', background: 'none',
+            fontSize: 11, color: 'white',
+            textShadow: '1px 1px 1px rgba(0,0,0,0.5)',
+            border: 'none', background: 'none',
             cursor: 'pointer', padding: '2px 4px',
           }}
         >reset</button>
