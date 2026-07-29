@@ -179,14 +179,34 @@ export async function deserialiseDocumentCompressed(
     return deserialiseDocument(buffer)
   }
 
+  const MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024 // 200MB, generous but bounded
   const stream      = new DecompressionStream('gzip');
   const writer      = stream.writable.getWriter();
   writer.write(buffer);
   writer.close();
 
-  const decompressed = await new Response(stream.readable).arrayBuffer();
+  const reader = stream.readable.getReader()
+  const chunks: Uint8Array[] = []
+  let totalSize = 0
 
-  return deserialiseDocument(decompressed);
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    totalSize += value.length
+    if (totalSize > MAX_DECOMPRESSED_SIZE) {
+      throw new Error('Decompressed file exceeds maximum allowed size')
+    }
+    chunks.push(value)
+  }
+
+  const decompressed = new Uint8Array(totalSize)
+  let offset = 0
+  for (const chunk of chunks) {
+    decompressed.set(chunk, offset)
+    offset += chunk.length
+  }
+
+  return deserialiseDocument(decompressed.buffer);
 }
 
 /*
