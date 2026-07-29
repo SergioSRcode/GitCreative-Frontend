@@ -36,6 +36,7 @@ import { updateLastBranch, getProject } from '../api/projects';
 import type { Layer } from '../types/layer';
 import { createLayer } from '../rendering/createLayer';
 import { HorizontalBar } from './HorizontalBar';
+import { blendModeToComposite } from '../utils/export';
 
 const MAX_RECENT = 10;
 
@@ -848,46 +849,48 @@ export function Canvas() {
     commitId: string,
     size: { w: number; h: number } = { w: 200, h: 150 }
   ): Promise<string> {
-    const cacheKey = `${commitId}_${size.w}x${size.h}`
+    const cacheKey = `${commitId}_${size.w}x${size.h}`;
     if (thumbnailCache.current.has(cacheKey)) {
-      return thumbnailCache.current.get(cacheKey)!
+      return thumbnailCache.current.get(cacheKey)!;
     }
 
-    const buffer = await fetchSnapshot(projectId, commitId)
-    const doc    = await deserialiseDocumentCompressed(buffer)
+    const buffer = await fetchSnapshot(projectId, commitId);
+    const doc    = await deserialiseDocumentCompressed(buffer);
 
-    const offscreen = document.createElement('canvas')
-    offscreen.width  = size.w
-    offscreen.height = size.h
-    const ctx = offscreen.getContext('2d')!
-    ctx.fillStyle = '#fff'
-    ctx.fillRect(0, 0, size.w, size.h)
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = size.w;
+    offscreen.height = size.h;
+    const ctx = offscreen.getContext('2d')!;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, size.w, size.h);
 
     // Composites EVERY visible layer, bottom to top
     for (const layerMeta of doc.metadata.layers) {
-      if (!layerMeta.visible) continue
-      const pixels = doc.layerPixels.get(layerMeta.id)
-      if (!pixels) continue
+      if (!layerMeta.visible) continue;
+      const pixels = doc.layerPixels.get(layerMeta.id);
+      if (!pixels) continue;
 
-      const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height)
+      const flipped = flipVertically(pixels, doc.metadata.width, doc.metadata.height);
 
-      const layerCanvas = document.createElement('canvas')
-      layerCanvas.width  = doc.metadata.width
-      layerCanvas.height = doc.metadata.height
-      const layerCtx = layerCanvas.getContext('2d')!
-      const imageData = new ImageData(
-        new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height
-      )
-      layerCtx.putImageData(imageData, 0, 0)
+      const layerCanvas = document.createElement('canvas');
+      layerCanvas.width  = doc.metadata.width;
+      layerCanvas.height = doc.metadata.height;
+      const layerCtx = layerCanvas.getContext('2d')!;
+      const imageData = new ImageData(new Uint8ClampedArray(flipped), doc.metadata.width, doc.metadata.height);
+      layerCtx.putImageData(imageData, 0, 0);
 
-      ctx.globalAlpha = layerMeta.opacity
-      ctx.drawImage(layerCanvas, 0, 0, size.w, size.h)
-      ctx.globalAlpha = 1.0
+      ctx.globalCompositeOperation = blendModeToComposite[layerMeta.blendMode] ?? 'source-over';
+      ctx.globalAlpha = layerMeta.opacity;
+      ctx.drawImage(layerCanvas, 0, 0, size.w, size.h);
     }
 
-    const url = offscreen.toDataURL('image/png')
-    thumbnailCache.current.set(cacheKey, url)
-    return url
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+
+    const url = offscreen.toDataURL('image/png');
+    thumbnailCache.current.set(cacheKey, url);
+    
+    return url;
   }
 
   async function handleTimelinePreview(commit: CommitSummary) {

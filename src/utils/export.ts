@@ -1,4 +1,11 @@
 import type { Layer } from "../types/layer";
+import type { BlendMode } from "../types/layer";
+
+export const blendModeToComposite: Record<BlendMode, GlobalCompositeOperation> = {
+  normal: 'source-over',
+  multiply: "multiply",
+  overlay: "overlay",
+}
 
 export type ExportFormat = 'png' | 'jpeg';
 
@@ -33,7 +40,6 @@ export async function exportCanvas(
 
     // ImageData expects pixels from top-row-first (gl.pixelReads returns buttom-row-first) => flip it
     const flipped = flipVertically(pixelBuffer, width, height);
-
     // wraps pixel data in an ImageData object, so the 2D canvas can read it
     const imageData = new ImageData(new Uint8ClampedArray(flipped), width, height);
 
@@ -42,10 +48,14 @@ export async function exportCanvas(
     layerCanvas.height = height;
     layerCanvas.getContext('2d')!.putImageData(imageData, 0, 0);
 
+        // Apply this layer's actual blend mode, not just opacity
+    ctx.globalCompositeOperation = blendModeToComposite[layer.blendMode] ?? 'source-over';
     ctx.globalAlpha = layer.opacity;
     ctx.drawImage(layerCanvas, 0, 0);
-    ctx.globalAlpha = 1.0;
   }
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1.0;
 
   const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
   const quality = format === 'jpeg' ? 0.92 : undefined;

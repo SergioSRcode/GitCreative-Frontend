@@ -1,6 +1,8 @@
 import { deserialiseDocumentCompressed } from './document';
 import { flipVertically } from './export';
 import { fetchCurrentState } from '../api/projects';
+// import { BlendMode } from '../types/layer';
+import { blendModeToComposite } from './export';
 
 const THUMB_SIZE = { w: 320, h: 180 };
 
@@ -39,10 +41,13 @@ export async function fetchProjectThumbnail(
     );
     layerCtx.putImageData(imageData, 0, 0);
 
+    ctx.globalCompositeOperation = blendModeToComposite[layerMeta.blendMode] ?? 'source-over';
     ctx.globalAlpha = layerMeta.opacity;
     ctx.drawImage(layerCanvas, 0, 0, THUMB_SIZE.w, THUMB_SIZE.h);
-    ctx.globalAlpha = 1.0;
   }
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1.0;
 
   return offscreen.toDataURL('image/jpeg', 0.8); // JPEG for smaller size, quality doesn't need to be high for a thumbnail
 }
