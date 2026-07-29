@@ -55,6 +55,7 @@ export function Canvas() {
   const strokeMaskRef = useRef<Layer | null>(null);
   const isPanningRef = useRef(false);
   const panStartRef   = useRef({ clientX: 0, clientY: 0, panX: 0, panY: 0 });
+  const lastToolRef = useRef<Tool>('ink');  // remembers whichever tool was active before switching to eraser
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -382,6 +383,8 @@ export function Canvas() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (e.button !== 0) return;  // if not left click, do not draw
+
     if (isPanMode) {
       canvasRef.current!.setPointerCapture(e.pointerId)
       isPanningRef.current = true
@@ -530,6 +533,31 @@ export function Canvas() {
     ])
     setBranchCommits(branch);
     setAllCommits(all);
+  }
+
+  function selectTool(t: Tool) {
+    if (t !== 'eraser') {
+      lastToolRef.current = t;
+    }
+
+    setTool(t);
+    setEyedropper(false);
+    setIsPanMode(false);
+  }
+
+  function handleContextMenu(e: React.MouseEvent<HTMLCanvasElement>) {
+    e.preventDefault();  // suppress the browser's native right-click menu
+
+    if (tool === 'eraser') {
+      // Switch back to whatever was active before eraser
+      selectTool(lastToolRef.current);
+    } else {
+      // Remember current tool, then switch to eraser
+      lastToolRef.current = tool;
+      setTool('eraser');
+      setEyedropper(false);
+      setIsPanMode(false);
+    }
   }
 
   function handleUndo() {
@@ -805,10 +833,16 @@ export function Canvas() {
       setSaving(false);
     }
   }
-  const handleQuickSaveRef = useRef(handleQuickSave)
+
+  const handleQuickSaveRef = useRef(handleQuickSave);
   useEffect(() => {
-    handleQuickSaveRef.current = handleQuickSave  // updated every render, always current
+    handleQuickSaveRef.current = handleQuickSave; // updated every render, always current
   }); 
+
+  const selectToolRef = useRef(selectTool);
+  useEffect(() => {
+    selectToolRef.current = selectTool;
+  });
 
   async function handleFetchThumbnail(
     commitId: string, 
@@ -1035,6 +1069,25 @@ export function Canvas() {
           if (undo(gl, layersRef.current)) compositeToScreen();
         }
       }
+
+      if (cmdOrCtrl && e.key === 'm') {
+        e.preventDefault()
+        setIsPanMode(m => !m)
+        setEyedropper(false)
+        return
+      }
+
+      if (cmdOrCtrl && e.key === 'p') {
+        e.preventDefault()
+        selectToolRef.current('pencil')
+        return
+      }
+
+      if (cmdOrCtrl && e.key === 'i') {
+        e.preventDefault()
+        selectToolRef.current('ink')
+        return
+      }
     }
 
     function handleResize() {
@@ -1190,20 +1243,27 @@ export function Canvas() {
 
         {/* Tools */}
         <div style={{ display: 'flex', gap: 6, padding: '0 12px', alignItems: 'flex-start' }}>
-          {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => (
-            <button
-              key={t}
-              onClick={() => { setTool(t); setEyedropper(false); setIsPanMode(false) }}
-              title={t}
-              style={{
-                padding: '4px 10px', borderRadius: 6,
-                border: '1px solid #ddd',
-                background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
-                fontWeight: tool === t && !eyedropper ? 600 : 400,
-                cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
-              }}
-            >{t}</button>
-          ))}
+          {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => {
+            const shortcuts: Partial<Record<Tool, string>> = {
+              pencil: '(⌘P)',
+              ink: '(⌘I)',
+            }
+          
+            return (
+              <button
+                key={t}
+                onClick={() => { selectTool(t) }}
+                title={`${t} ${shortcuts[t] ?? ''}`}
+                style={{
+                  padding: '4px 10px', borderRadius: 6,
+                  border: '1px solid #ddd',
+                  background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
+                  fontWeight: tool === t && !eyedropper ? 600 : 400,
+                  cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
+                }}
+              >{t}</button>
+              )
+          })}
         </div>
 
         {/* Tool-specific settings */}
@@ -1244,7 +1304,7 @@ export function Canvas() {
         {/* Pan/drag tool — always last in the row */}
         <button
           onClick={() => { setIsPanMode(m => !m); setEyedropper(false) }}
-          title="Drag canvas (pan)"
+          title="Drag canvas (⌘M)"
           style={{
             padding: '4px 10px', borderRadius: 6,
             border: '1px solid #ddd',
@@ -1423,6 +1483,7 @@ export function Canvas() {
         <canvas
           ref={canvasRef}
           onWheel={handleWheel}
+          onContextMenu={handleContextMenu}
           style={{
             display: 'block',
             touchAction: 'none',
