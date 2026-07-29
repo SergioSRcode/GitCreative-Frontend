@@ -2,7 +2,7 @@
 
 A browser-based digital painting application with Git-style version control. Built with React, TypeScript, and WebGL2.
 
-This is the frontend client. It talks to the [GitCreative-Backend](#) (separate repository) via a REST API.
+This is the frontend client. It talks to the [GitCreative-Backend](https://github.com/SergioSRcode/GitCreative-Backend) (separate repository) via a REST API.
 
 ---
 
@@ -41,7 +41,7 @@ This is the frontend client. It talks to the [GitCreative-Backend](#) (separate 
 ### Prerequisites
 
 - Node.js 20+
-- A running instance of the [GitCreative-Backend](#) (see that repo's README for setup)
+- A running instance of the [GitCreative-Backend](https://github.com/SergioSRcode/GitCreative-Backend) (see that repo's README for setup)
 
 ### Install
 
