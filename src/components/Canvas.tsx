@@ -1342,7 +1342,7 @@ export function Canvas() {
           max={500}
           onChange={setBrushSize}
           onInteracting={setSizeBarActive}
-          formatLabel={v => String(v)}
+          formatLabel={(v: number) => String(v)}
         />
 
         {/* Brush opacity bar — lower half of the left edge */}
@@ -1352,7 +1352,7 @@ export function Canvas() {
           max={1}
           step={0.01}
           onChange={setBrushOpacity}
-          formatLabel={v => `${Math.round(v * 100)}%`}
+          formatLabel={(v: number) => `${Math.round(v * 100)}%`}
         />
 
         <label style={{
