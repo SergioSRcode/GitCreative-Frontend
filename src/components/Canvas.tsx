@@ -255,7 +255,6 @@ export function Canvas() {
   }
 
   function getPoint(e: React.PointerEvent<HTMLCanvasElement>): StrokePoint {
-    console.log('pointerType:', e.pointerType, 'pressure:', e.pressure)
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const isPen = e.pointerType === 'pen';
