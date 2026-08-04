@@ -68,3 +68,11 @@
   .toolbar-icon-only  { display: inline; }
 }
 
+.layer-list-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.layer-list-scroll::-webkit-scrollbar {
+  display: none;
+}

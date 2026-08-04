@@ -61,14 +61,19 @@ export function HorizontalBar({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onContextMenu={e => e.preventDefault()}
         style={{
           width,
-          height: 28,
+          height: 44,
           borderRadius: 3,
           position: 'relative',
           cursor: 'ew-resize',
           display: 'flex',
           alignItems: 'center',
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
         }}
       >
         <div style={{

@@ -58,7 +58,7 @@ export function Canvas() {
   const panStartRef   = useRef({ clientX: 0, clientY: 0, panX: 0, panY: 0 });
   const lastToolRef = useRef<Tool>('ink');  // remembers whichever tool was active before switching to eraser
   const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const pinchStartRef = useRef<{ distance: number; zoom: number; midX: number; midY: number } | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -98,6 +98,8 @@ export function Canvas() {
   const [isPanningActive, setIsPanningActive] = useState(false);
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 840);
   const [rightPanelOpen, setRightPanelOpen] = useState(!isNarrowScreen);
+  const lastTwoFingerTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
+  const twoFingerTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null)
 
   useEffect(() => {
     function handleWidthCheck() { 
@@ -141,6 +143,10 @@ export function Canvas() {
     medium: 0.5,
     hard:   1.0,
   };
+
+  const DOUBLE_TAP_MAX_INTERVAL = 350;   // ms between taps to count as "double"
+  const TAP_MAX_DURATION        = 250;   // ms — longer than this is a hold/drag, not a tap
+  const TAP_MAX_MOVEMENT        = 20;    // px — more than this is a pinch/pan, not a tap
 
   async function loadProject(pid: string, targetBranchId?: string) {
     try {
@@ -428,8 +434,21 @@ export function Canvas() {
       // Second finger just landed — start a pinch gesture, cancel any in-progress stroke
       isDrawing.current = false;
       isPanningRef.current = false;
-      pinchStartRef.current = { distance: getPinchDistance(), zoom };
 
+      // Track the start of this two-finger touch, to later classify it
+      // as a tap (quick, minimal movement) vs. a pinch/pan (sustained, moved)
+      const points = Array.from(activePointersRef.current.values());
+      const midX = (points[0].x + points[1].x) / 2;
+      const midY = (points[0].y + points[1].y) / 2;
+
+      pinchStartRef.current = { 
+        distance: getPinchDistance(), 
+        zoom,
+        midX,
+        midY,
+      };
+
+      twoFingerTapStartRef.current = { time: e.timeStamp, x: midX, y: midY };
       return;
     }
 
@@ -504,10 +523,41 @@ export function Canvas() {
     }
 
     if (activePointersRef.current.size === 2 && pinchStartRef.current) {
+      const points = Array.from(activePointersRef.current.values());
+      const midX = (points[0].x + points[1].x) / 2;
+      const midY = (points[0].y + points[1].y) / 2;
+
+      // Zoom - based on how the distance between fingers has changed
       const currentDistance = getPinchDistance();
       const scale = currentDistance / pinchStartRef.current.distance;
       const newZoom = Math.max(0.25, Math.min(4, pinchStartRef.current.zoom * scale));
       setZoom(newZoom);
+
+      // Pan — based on how the midpoint between fingers has moved
+      const dx = midX - pinchStartRef.current.midX;
+      const dy = midY - pinchStartRef.current.midY;
+      setPan(prevPan => ({
+        x: prevPan.x + dx,
+        y: prevPan.y + dy,
+      }));
+
+      // Updates the reference point for the NEXT move event, so pan/zoom
+      // deltas are always relative to the last frame, not the original touch-down
+      pinchStartRef.current = {
+        distance: currentDistance,
+        zoom: newZoom,
+        midX,
+        midY,
+      };
+
+      // Movement disqualifies this gesture from being a "tap"
+      if (twoFingerTapStartRef.current) {
+        const dx = midX - twoFingerTapStartRef.current.x
+        const dy = midY - twoFingerTapStartRef.current.y
+        if (Math.sqrt(dx * dx + dy * dy) > TAP_MAX_MOVEMENT) {
+          twoFingerTapStartRef.current = null  // too much movement — not a tap anymore
+        }
+      }
 
       return;
     }
@@ -540,11 +590,43 @@ export function Canvas() {
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    const wasTwoFingerGesture = activePointersRef.current.size === 2;
+
     activePointersRef.current.delete(e.pointerId);
 
     if (activePointersRef.current.size < 2) {
       pinchStartRef.current = null;
     }
+
+    // Check for a completed two-finger TAP (short duration, minimal movement)
+    if (wasTwoFingerGesture && twoFingerTapStartRef.current) {
+      const duration = e.timeStamp - twoFingerTapStartRef.current.time;
+
+      if (duration <= TAP_MAX_DURATION) {
+        const now = e.timeStamp;
+        const last = lastTwoFingerTapRef.current;
+
+        if (
+          last &&
+          now - last.time <= DOUBLE_TAP_MAX_INTERVAL
+        ) {
+          // Second tap arrived in time — this is a double-tap. Trigger undo.
+          const gl = glRef.current!;
+          if (undo(gl, layersRef.current)) compositeToScreen();
+          lastTwoFingerTapRef.current = null;  // consumed — reset so a third tap starts fresh
+        } else {
+          // First tap of a potential pair — remember it and wait for a second
+          lastTwoFingerTapRef.current = {
+            time: now,
+            x: twoFingerTapStartRef.current.x,
+            y: twoFingerTapStartRef.current.y,
+          };
+        }
+      }
+
+      twoFingerTapStartRef.current = null;
+    }
+
 
     if (activePointersRef.current.size >= 1) return;  // still mid-gesture with another finger down
   

@@ -19,6 +19,10 @@ export function VerticalBar({
 }: Props) {
   const barRef     = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const settledValueRef = useRef<number | null>(null);
+  const settleTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const SETTLE_DELAY = 300; // ms of stillness before a value counts as "settled"
 
   function clientYToValue(clientY: number): number {
     const bar  = barRef.current!;
@@ -29,22 +33,44 @@ export function VerticalBar({
     return Math.round(raw / step) * step;
   }
 
+  function scheduleSettle(newValue: number) {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+
+    settleTimerRef.current = setTimeout(() => {
+      settledValueRef.current = newValue
+    }, SETTLE_DELAY);
+  }
+
+
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     barRef.current!.setPointerCapture(e.pointerId);
     isDragging.current = true;
     onInteracting?.(true);
-    onChange(clientYToValue(e.clientY));
+
+    const value = clientYToValue(e.clientY);
+    settledValueRef.current = null;
+    onChange(value);
+    scheduleSettle(value);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!isDragging.current) return;
-    onChange(clientYToValue(e.clientY));
+    const value = clientYToValue(e.clientY);
+    onChange(value);
+    scheduleSettle(value);
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (!isDragging.current) return;
     isDragging.current = false;
-    onChange(clientYToValue(e.clientY));
+
+    const finalPointerValue = clientYToValue(e.clientY);
+    const valueToUse = settledValueRef.current ?? finalPointerValue;
+    onChange(valueToUse);
+
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settledValueRef.current = null;
+
     onInteracting?.(false);
   }
 
@@ -77,14 +103,19 @@ export function VerticalBar({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onContextMenu={e => e.preventDefault()}
         style={{
-          width: 28,
+          width: 44,
           height,
           borderRadius: 3,
           position: 'relative',
           cursor: 'ns-resize',
           display: 'flex',
           justifyContent: 'center',
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
         }}
       >
         <div style={{
