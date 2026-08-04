@@ -57,6 +57,8 @@ export function Canvas() {
   const isPanningRef = useRef(false);
   const panStartRef   = useRef({ clientX: 0, clientY: 0, panX: 0, panY: 0 });
   const lastToolRef = useRef<Tool>('ink');  // remembers whichever tool was active before switching to eraser
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -94,8 +96,17 @@ export function Canvas() {
   const [pan,  setPan]  = useState({ x: 0, y: 0 });  // CSS pixel offset
   const [isPanMode, setIsPanMode] = useState(false); // hand-drag tool toggle
   const [isPanningActive, setIsPanningActive] = useState(false);
-  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 820);
+
+  useEffect(() => {
+    function handleWidthCheck() { 
+      setIsNarrowScreen(window.innerWidth < 820);
+    }
+
+    window.addEventListener('resize', handleWidthCheck);
+
+    return () => window.removeEventListener('resize', handleWidthCheck);
+  }, []);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -1236,7 +1247,10 @@ export function Canvas() {
       <div
         data-toolbar-dropdown
         style={{
-          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
+          position: 'absolute', top: 10, 
+          left: isNarrowScreen ? 10 : '50%', 
+          transform: isNarrowScreen ? 'none' : 'translateX(-50%)', 
+          zIndex: 10,
           background: 'white', border: '1px solid #ddd',
           borderRadius: 10, padding: 10,
           display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 0,
