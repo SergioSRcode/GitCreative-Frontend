@@ -39,6 +39,8 @@ export default function App() {
           from { opacity: 0; transform: scale(0.96); }
           to   { opacity: 1; transform: scale(1); }
         }
+
+        button { cursor: pointer }
       `}
       </style>
 
