@@ -171,17 +171,16 @@ export function CommitsTab({
                       }}
                     >Look at this</button>
                   )}
-                  {!isCurrent && (
-                    <button
-                      onClick={() => onCreateBranch(commit)}
-                      style={{
-                        fontSize: 10, padding: '2px 6px',
-                        borderRadius: 4, border: '1px solid #4caf50',
-                        color: '#4caf50', background: 'white',
-                        cursor: 'pointer',
-                      }}
-                    >Continue from here</button>
-                  )}
+                  
+                  <button
+                    onClick={() => onCreateBranch(commit)}
+                    style={{
+                      fontSize: 10, padding: '2px 6px',
+                      borderRadius: 4, border: '1px solid #4caf50',
+                      color: '#4caf50', background: 'white',
+                      cursor: 'pointer',
+                    }}
+                  >Continue from here</button>
                 </div>
               </div>
             </div>
