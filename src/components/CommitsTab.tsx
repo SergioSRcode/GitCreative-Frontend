@@ -25,6 +25,7 @@ export function CommitsTab({
   onTimelinePreview, onTimelinePreviewEnd, onFetchThumbnail,
 }: Props) {
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const [isPreviewingOnHover, setIsPreviewingOnHover] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lazily load thumbnails for visible commits
@@ -50,11 +51,15 @@ export function CommitsTab({
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     // Small debounce so quickly passing the mouse over several rows
     // doesn't trigger a fetch+render for each one
-    hoverTimer.current = setTimeout(() => onTimelinePreview(commit), 150);
+    hoverTimer.current = setTimeout(() => {
+      setIsPreviewingOnHover(true);
+      onTimelinePreview(commit);
+    }, 150);
   }
 
   function handleMouseLeave() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setIsPreviewingOnHover(false);
     onTimelinePreviewEnd();
   }
 
@@ -87,7 +92,7 @@ export function CommitsTab({
           />
           <button
             onClick={onCommit}
-            disabled={committing || !commitMessage.trim()}
+            disabled={committing || !commitMessage.trim() || isPreviewingOnHover}
             style={{
               padding: '5px 0', borderRadius: 6,
               border: '1px solid #ddd',

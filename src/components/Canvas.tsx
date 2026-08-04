@@ -927,11 +927,6 @@ export function Canvas() {
     }
   }
 
-  // function handleTimelineCommit(commit: CommitSummary) {
-  //   // Actually commit to viewing this state — same as clicking "View" in Commits tab
-  //   handleRestoreCommit(commit);
-  // }
-
   async function handleTimelinePreviewEnd() {
     // Revert canvas back to whatever is actually being viewed/committed
     if (!projectId || !viewingCommitId || !activeBranchId) return;
