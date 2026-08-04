@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useParams } from "react-router-dom"
 import { Canvas } from "./components/Canvas"
 import { Gallery } from './components/Gallery'
 import { AuthPage } from './components/AuthPage'
+import './styles/responsive.css'
 
 function isAuthenticated(): boolean {
   return !!localStorage.getItem('authToken');

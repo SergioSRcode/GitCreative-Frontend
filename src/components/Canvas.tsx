@@ -96,16 +96,22 @@ export function Canvas() {
   const [pan,  setPan]  = useState({ x: 0, y: 0 });  // CSS pixel offset
   const [isPanMode, setIsPanMode] = useState(false); // hand-drag tool toggle
   const [isPanningActive, setIsPanningActive] = useState(false);
-  const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 820);
+  const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 840);
+  const [rightPanelOpen, setRightPanelOpen] = useState(!isNarrowScreen);
 
   useEffect(() => {
     function handleWidthCheck() { 
-      setIsNarrowScreen(window.innerWidth < 820);
+      const isNarrow = window.innerWidth < 840;
+      setIsNarrowScreen(isNarrow);
     }
 
     window.addEventListener('resize', handleWidthCheck);
+    window.addEventListener('orientationchange', handleWidthCheck)
 
-    return () => window.removeEventListener('resize', handleWidthCheck);
+    return () => {
+      window.removeEventListener('resize', handleWidthCheck);
+      window.removeEventListener('orientationchange', handleWidthCheck);
+    }
   }, []);
 
   const projectId = urlProjectId ?? '';
@@ -200,6 +206,15 @@ export function Canvas() {
       // if no commits exist yet => start with blank canvas
     } catch (err) {
       console.error('Failed to load project: ', err);
+      // DEBUGGING START
+      try {
+        const { project } = await getProject(pid)
+        console.log('Fetched project for blank init:', project)
+        // ... rest of the fallback init logic
+      } catch (innerErr) {
+        console.error('Fallback init ALSO failed:', innerErr)
+      }
+      // DEBUGGING END
     }
   }
 
@@ -1196,6 +1211,7 @@ export function Canvas() {
           position: 'absolute', 
           top: `max(10px, env(safe-area-inset-top))`, 
           left: `max(10px, env(safe-area-inset-left))`, 
+          right: isNarrowScreen ? `max(10px, env(safe-area-inset-right))` : 'auto',
           zIndex: 10,
           background: 'white', border: '1px solid #ddd',
           borderRadius: 10, padding: 10,
@@ -1251,22 +1267,17 @@ export function Canvas() {
       {/* Panel 2 — Active tools: export, save, undo/redo, tool selector + settings — top-center */}
       <div
         data-toolbar-dropdown
+        className="toolbar-panel-2"
         style={{
-          position: 'absolute', 
-          top: `max(10px, env(safe-area-inset-top))`, 
-          left: isNarrowScreen ? `max(10px, env(safe-area-inset-left))` : '50%', 
-          transform: isNarrowScreen ? 'none' : 'translateX(-50%)', 
           zIndex: 10,
           background: 'white', border: '1px solid #ddd',
           borderRadius: 10, padding: 10,
-          display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 0,
+          display: 'flex',
           boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-          maxWidth: '80vw',
-          overflowX: 'auto',
         }}
       >
         {/* Export dropdown */}
-        <div style={{ padding: '0 12px', position: 'relative' }}>
+        <div className="toolbar-group" style={{ position: 'relative' }}>
           <button
             ref={exportButtonRef}
             onClick={handleToggleExportMenu}
@@ -1275,13 +1286,16 @@ export function Canvas() {
               border: '1px solid #ddd', background: 'white',
               cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
             }}
-          >⬇ Export ▾</button>
+          >
+            <span className='toolbar-text-label'>⬇ Export ▾</span>
+            <span className='toolbar-icon-only'>⬇</span>
+          </button>
         </div>
 
-        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+        <div className="toolbar-divider" />
 
         {/* Save */}
-        <div style={{ padding: '0 12px' }}>
+        <div className="toolbar-group">
           <button
             onClick={handleQuickSave}
             disabled={saving || isDetached}
@@ -1291,58 +1305,96 @@ export function Canvas() {
               border: '1px solid #ddd',
               background: saving ? '#f8f8f8' : 'white',
               cursor: isDetached ? 'default' : 'pointer',
-              fontSize: 13, opacity: isDetached ? 0.4 : 1, whiteSpace: 'nowrap',
+              fontSize: 13, opacity: isDetached ? 0.4 : 1,
+              whiteSpace: 'nowrap',
             }}
           >
-            💾 {saving ? 'Saving...' : 'Save'}
-            {lastSavedAt && !saving && (
-              <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>
-                {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
+            <span className="toolbar-text-label">
+              💾 {saving ? 'Saving...' : 'Save'}
+              {lastSavedAt && !saving && (
+                <span style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>
+                  {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </span>
+            <span className="toolbar-icon-only">💾</span>
           </button>
         </div>
 
-        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+        <div className="toolbar-divider" />
 
         {/* Undo/Redo */}
-        <div style={{ display: 'flex', gap: 6, padding: '0 12px', alignItems: 'flex-start' }}>
-          <button onClick={handleUndo} disabled={!canUndo()} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #ddd', background: canUndo() ? 'white' : '#f8f8f8', color: canUndo() ? '#000' : '#bbb', cursor: canUndo() ? 'pointer' : 'default', fontSize: 13 }}>↩</button>
-          <button onClick={handleRedo} disabled={!canRedo()} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #ddd', background: canRedo() ? 'white' : '#f8f8f8', color: canRedo() ? '#000' : '#bbb', cursor: canRedo() ? 'pointer' : 'default', fontSize: 13 }}>↪</button>
+        <div className="toolbar-group" style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo()}
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canUndo() ? 'white' : '#f8f8f8',
+              color: canUndo() ? '#000' : '#bbb',
+              cursor: canUndo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↩</button>
+          <button
+            onClick={handleRedo}
+            disabled={!canRedo()}
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: canRedo() ? 'white' : '#f8f8f8',
+              color: canRedo() ? '#000' : '#bbb',
+              cursor: canRedo() ? 'pointer' : 'default',
+              fontSize: 13,
+            }}
+          >↪</button>
         </div>
 
-        <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
+        <div className="toolbar-divider" />
 
         {/* Tools */}
-        <div style={{ display: 'flex', gap: 6, padding: '0 12px', alignItems: 'flex-start' }}>
+        <div className="toolbar-group toolbar-tools" style={{ display: 'flex', gap: 6 }}>
           {(['pencil', 'ink', 'eraser', 'airbrush', 'fill'] as Tool[]).map(t => {
-            const shortcuts: Partial<Record<Tool, string>> = {
-              pencil: '(⌘P)',
-              ink: '(⌘I)',
-            }
-          
-            return (
-              <button
-                key={t}
-                onClick={() => { selectTool(t) }}
-                title={`${t} ${shortcuts[t] ?? ''}`}
-                style={{
-                  padding: '4px 10px', borderRadius: 6,
-                  border: '1px solid #ddd',
-                  background: tool === t && !eyedropper ? '#f0f0f0' : 'white',
-                  fontWeight: tool === t && !eyedropper ? 600 : 400,
-                  cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
-                }}
-              >{t}</button>
-              )
-          })}
+              const shortcuts: Partial<Record<Tool, string>> = {
+                pencil: ' (⌘P)',
+                ink:    ' (⌘I)',
+              }
+
+              return (
+                <button
+                  key={t}
+                  onClick={() => selectTool(t)}
+                  title={`${t}${shortcuts[t] ?? ''}`}
+                  style={{
+                    padding: '4px 10px', borderRadius: 6,
+                    border: '1px solid #ddd',
+                    background: tool === t && !eyedropper && !isPanMode ? '#f0f0f0' : 'white',
+                    fontWeight: tool === t && !eyedropper && !isPanMode ? 600 : 400,
+                    cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
+                  }}
+                >{t}</button>
+              );
+            })}
+
+          <button
+            onClick={() => { setIsPanMode(m => !m); setEyedropper(false) }}
+            title="Drag canvas (pan) (⌘M)"
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: '1px solid #ddd',
+              background: isPanMode ? '#f0f0f0' : 'white',
+              fontWeight: isPanMode ? 600 : 400,
+              cursor: 'pointer', fontSize: 12,
+            }}
+          >✋</button>
         </div>
 
         {/* Tool-specific settings */}
         {tool === 'airbrush' && (
           <>
-            <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
-            <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 110 }}>
+            <div className="toolbar-divider" />
+            <div className="toolbar-group" style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 110 }}>
               <span style={{ fontSize: 11, color: '#888' }}>Airbrush type</span>
               <select
                 value={airbrushVariant}
@@ -1360,31 +1412,32 @@ export function Canvas() {
 
         {tool === 'fill' && (
           <>
-            <div style={{ width: 1, alignSelf: 'stretch', background: '#eee' }} />
-            <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+            <div className="toolbar-divider" />
+            <div className="toolbar-group" style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
               <span style={{ fontSize: 11, color: '#888' }}>Fill tolerance</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setFillTolerance(t => Math.max(0, t - 1))} aria-label="Decrease tolerance by 1" style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>−</button>
-                <input type="range" min={0} max={255} step={1} value={fillTolerance} onChange={e => setFillTolerance(parseInt(e.target.value))} aria-label="Fill tolerance" style={{ flex: 1, minWidth: 0 }} />
-                <button onClick={() => setFillTolerance(t => Math.min(255, t + 1))} aria-label="Increase tolerance by 1" style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}>+</button>
+                <button
+                  onClick={() => setFillTolerance(t => Math.max(0, t - 1))}
+                  aria-label="Decrease tolerance by 1"
+                  style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                >−</button>
+                <input
+                  type="range" min={0} max={255} step={1}
+                  value={fillTolerance}
+                  onChange={e => setFillTolerance(parseInt(e.target.value))}
+                  aria-label="Fill tolerance"
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                <button
+                  onClick={() => setFillTolerance(t => Math.min(255, t + 1))}
+                  aria-label="Increase tolerance by 1"
+                  style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 11, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                >+</button>
                 <span style={{ fontSize: 11, color: '#888', width: 26, flexShrink: 0, textAlign: 'right' }}>{fillTolerance}</span>
               </div>
             </div>
           </>
         )}
-
-        {/* Pan/drag tool — always last in the row */}
-        <button
-          onClick={() => { setIsPanMode(m => !m); setEyedropper(false) }}
-          title="Drag canvas (⌘M)"
-          style={{
-            padding: '4px 10px', borderRadius: 6,
-            border: '1px solid #ddd',
-            background: isPanMode ? '#f0f0f0' : 'white',
-            fontWeight: isPanMode ? 600 : 400,
-            cursor: 'pointer', fontSize: 12,
-          }}
-        >✋</button>
       </div>
       <div style={{
         position: 'absolute',
@@ -1474,8 +1527,30 @@ export function Canvas() {
         </div>
       )}
 
+      {isNarrowScreen && (
+        <button
+          onClick={() => setRightPanelOpen(o => !o)}
+          style={{
+            position: 'fixed',
+            top: `max(10px, env(safe-area-inset-top))`,
+            right: `max(10px, env(safe-area-inset-right))`,
+            zIndex: 20,
+            width: 40, height: 40, borderRadius: 8,
+            border: '1px solid #ddd', background: 'white',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            fontSize: 18, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          aria-label={rightPanelOpen ? 'Close panel' : 'Open panel'}
+        >
+          {rightPanelOpen ? '✕' : '☰'}
+        </button>
+      )}
+
       {/* Tab panel: Layers, commits, branches */}
       <RightPanel
+        isNarrowScreen={isNarrowScreen}
+        isOpen={!isNarrowScreen || rightPanelOpen}
         // Layer props
         layers={layersDisplay}
         activeLayerId={activeLayerId}

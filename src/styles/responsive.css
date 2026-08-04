@@ -1,0 +1,70 @@
+.toolbar-panel-2 {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+  align-items: flex-start;
+  max-width: 80vw;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
+}
+
+.toolbar-group {
+  padding: 0 12px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #eee;
+}
+
+/* Hidden by default (wide screens show the text label instead) */
+.toolbar-icon-only {
+  display: none;
+}
+
+@media (max-width: 840px) {
+  .toolbar-panel-2 {
+    top: 50%;
+    left: auto;
+    right: max(10px, env(safe-area-inset-right));
+    transform: translateY(-50%);
+    flex-direction: column;
+    align-items: stretch;
+    max-width: none;
+    max-height: 80vh;
+    overflow-x: visible;
+    overflow-y: auto;
+    width: 85px; /* fits "airbrush" comfortably; every button stretches to match */
+  }
+
+  .toolbar-group {
+    padding: 8px 0;
+  }
+
+  .toolbar-divider {
+    width: 100%;
+    height: 1px;
+    align-self: auto;
+  }
+
+  .toolbar-tools {
+    flex-direction: column;
+  }
+
+  .toolbar-panel-2 button {
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Swap text label for icon-only on narrow screens */
+  .toolbar-text-label { display: none; }
+  .toolbar-icon-only  { display: inline; }
+}
+

@@ -10,6 +10,8 @@ import { TreeOverlay } from "./TreeOverlay";
 type Tab = 'layers' | 'commits' | 'branches' | 'tree';
 
 type Props = {
+  isNarrowScreen: boolean,
+  isOpen: boolean,
   // Layer props
   layers:        Layer[],
   activeLayerId: string | null,
@@ -51,6 +53,8 @@ export function RightPanel(props: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('layers');
   const [treeOpen, setTreeOpen] = useState(false);
 
+  if (!props.isOpen) return null;
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'layers', label: 'Layers' },
     { id: 'commits', label: 'History' },
@@ -60,13 +64,18 @@ export function RightPanel(props: Props) {
 
   return (
     <div style={{
-      position: 'absolute', top: 10, right: 10, zIndex: 10,
+      position: 'absolute', 
+      top: props.isNarrowScreen
+        ? `calc(max(10px, env(safe-area-inset-top)) + 50px)`
+        : `max(10px, env(safe-area-inset-top))`,
+      right: `max(10px, env(safe-area-inset-right))`, 
+      zIndex: 10,
       background: 'white', border: '1px solid #ddd',
       borderRadius: 10,
       boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-      width: 240,
+      width: props.isNarrowScreen ? 200 : 240,
       display: 'flex', flexDirection: 'column',
-      maxHeight: 'calc(100vh - 20px)',
+      maxHeight: props.isNarrowScreen ? '60vh' : 'calc(100vh - 20px)',
       overflow: 'hidden',
     }}>
 

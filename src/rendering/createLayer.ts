@@ -1,4 +1,5 @@
 import type { Layer, BlendMode } from '../types/layer';
+import { generateUUID } from '../utils/uuid';
 
 export function createLayer(
   gl: WebGL2RenderingContext,
@@ -54,7 +55,7 @@ export function createLayer(
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     name,
     visible: true,
     opacity: 1.0,
