@@ -94,6 +94,8 @@ export function Canvas() {
   const [pan,  setPan]  = useState({ x: 0, y: 0 });  // CSS pixel offset
   const [isPanMode, setIsPanMode] = useState(false); // hand-drag tool toggle
   const [isPanningActive, setIsPanningActive] = useState(false);
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
 
   const projectId = urlProjectId ?? '';
   const dpr = window.devicePixelRatio || 1;
@@ -188,6 +190,16 @@ export function Canvas() {
     } catch (err) {
       console.error('Failed to load project: ', err);
     }
+  }
+
+  function getPinchDistance(): number {
+    const points = Array.from(activePointersRef.current.values());
+    if (points.length < 2) return 0;
+
+    const dx = points[0].x - points[1].x;
+    const dy = points[0].y - points[1].y;
+
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function recreateStrokeMask(gl: WebGL2RenderingContext, width: number, height: number) {
@@ -384,6 +396,19 @@ export function Canvas() {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 2) {
+      // Second finger just landed — start a pinch gesture, cancel any in-progress stroke
+      isDrawing.current = false;
+      isPanningRef.current = false;
+      pinchStartRef.current = { distance: getPinchDistance(), zoom };
+
+      return;
+    }
+
+    if (activePointersRef.current.size > 2) return;  // ignore 3+ finger input entirely
+
     if (e.button !== 0) return;  // if not left click, do not draw
 
     if (isPanMode) {
@@ -448,6 +473,19 @@ export function Canvas() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (activePointersRef.current.has(e.pointerId)) {
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (activePointersRef.current.size === 2 && pinchStartRef.current) {
+      const currentDistance = getPinchDistance();
+      const scale = currentDistance / pinchStartRef.current.distance;
+      const newZoom = Math.max(0.25, Math.min(4, pinchStartRef.current.zoom * scale));
+      setZoom(newZoom);
+
+      return;
+    }
+
     if (isPanMode) {
       if (!isPanningRef.current) return;
 
@@ -476,6 +514,14 @@ export function Canvas() {
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    activePointersRef.current.delete(e.pointerId);
+
+    if (activePointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+    }
+
+    if (activePointersRef.current.size >= 1) return;  // still mid-gesture with another finger down
+  
     if (isPanMode) {
       isPanningRef.current = false;
       setIsPanningActive(false);
