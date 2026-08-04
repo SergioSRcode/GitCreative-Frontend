@@ -63,6 +63,11 @@ export function CommitsTab({
     onTimelinePreviewEnd();
   }
 
+  function handleCommitClick() {
+    if (committing || !commitMessage.trim() || isPreviewingOnHover) return;
+    onCommit();
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
@@ -84,25 +89,25 @@ export function CommitsTab({
             onChange={e => onCommitMessageChange(e.target.value)}
             placeholder="Describe what changed..."
             aria-label="Version description"
-            onKeyDown={e => { if (e.key === 'Enter') onCommit() }}
+            onKeyDown={e => { if (e.key === 'Enter') handleCommitClick() }}
             style={{
               border: '1px solid #ddd', borderRadius: 6,
               padding: '5px 8px', fontSize: 12, outline: 'none',
             }}
           />
           <button
-            onClick={onCommit}
+            onClick={handleCommitClick}
             disabled={committing || !commitMessage.trim() || isPreviewingOnHover}
             style={{
               padding: '5px 0', borderRadius: 6,
               border: '1px solid #ddd',
-              background: commitMessage.trim() && !committing ? '#f0f0f0' : '#f8f8f8',
-              color: commitMessage.trim() && !committing ? '#000' : '#bbb',
-              cursor: commitMessage.trim() && !committing ? 'pointer' : 'default',
+              background: commitMessage.trim() && !committing && !isPreviewingOnHover ? '#f0f0f0' : '#f8f8f8',
+              color: commitMessage.trim() && !committing && !isPreviewingOnHover ? '#000' : '#bbb',
+              cursor: commitMessage.trim() && !committing && !isPreviewingOnHover ? 'pointer' : 'default',
               fontSize: 12, fontWeight: 500,
             }}
           >
-            {committing ? 'Saving...' : '📸 Version Snapshot'}
+            {committing ? 'Saving...' : '📸 Create Version Snapshot'}
           </button>
         </div>
       )}
