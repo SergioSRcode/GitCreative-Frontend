@@ -90,8 +90,8 @@ export function smooth(points: StrokePoint[], passes: number = 2): StrokePoint[]
 // ramps toward full size as pressure increases. The 0.3 floor and 0.7 range
 // are tunable constants controlling how dramatic the taper feels.
 export function pressureToRadiusScale(pressure: number): number {
-  const floor = 0.3;
-  const range = 0.7;
+  const floor = 0.15;
+  const range = 0.85;
 
   return floor + range * pressure;
 }
