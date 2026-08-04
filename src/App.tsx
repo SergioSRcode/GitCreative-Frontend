@@ -41,6 +41,13 @@ export default function App() {
         }
 
         button { cursor: pointer }
+
+        /* Comfortable touch targets on touch-capable devices */
+        @media (pointer: coarse) {
+          button, input[type="checkbox"], input[type="range"] {
+            min-height: 36px;
+          }
+        }
       `}
       </style>
 
