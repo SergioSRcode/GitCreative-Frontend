@@ -1166,11 +1166,13 @@ export function Canvas() {
       }
     }
 
-    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('orientationchange', handleResize);
+    window.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
 
     return () => {
+      window.removeEventListener('orientationchange', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousedown', handleClickOutside)
@@ -1191,7 +1193,10 @@ export function Canvas() {
       <div
         data-toolbar-dropdown
         style={{
-          position: 'absolute', top: 10, left: 10, zIndex: 10,
+          position: 'absolute', 
+          top: `max(10px, env(safe-area-inset-top))`, 
+          left: `max(10px, env(safe-area-inset-left))`, 
+          zIndex: 10,
           background: 'white', border: '1px solid #ddd',
           borderRadius: 10, padding: 10,
           display: 'flex', flexDirection: 'column', gap: 8,
@@ -1247,8 +1252,9 @@ export function Canvas() {
       <div
         data-toolbar-dropdown
         style={{
-          position: 'absolute', top: 10, 
-          left: isNarrowScreen ? 10 : '50%', 
+          position: 'absolute', 
+          top: `max(10px, env(safe-area-inset-top))`, 
+          left: isNarrowScreen ? `max(10px, env(safe-area-inset-left))` : '50%', 
           transform: isNarrowScreen ? 'none' : 'translateX(-50%)', 
           zIndex: 10,
           background: 'white', border: '1px solid #ddd',
