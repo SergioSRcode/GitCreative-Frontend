@@ -63,8 +63,10 @@ export function CommitsTab({
     setIsPreviewingOnHover(false);
   }
 
+  const canCommit = commitMessage.trim() && !committing && !isPreviewingOnHover;
+
   function handleCommitClick() {
-    if (committing || !commitMessage.trim() || isPreviewingOnHover) return;
+    if (!canCommit) return;
     onCommit();
   }
 
@@ -97,17 +99,17 @@ export function CommitsTab({
           />
           <button
             onClick={handleCommitClick}
-            disabled={committing || !commitMessage.trim() || isPreviewingOnHover}
+            disabled={!canCommit}
             style={{
               padding: '5px 0', borderRadius: 6,
               border: '1px solid #ddd',
-              background: commitMessage.trim() && !committing && !isPreviewingOnHover ? '#f0f0f0' : '#f8f8f8',
-              color: commitMessage.trim() && !committing && !isPreviewingOnHover ? '#000' : '#bbb',
-              cursor: commitMessage.trim() && !committing && !isPreviewingOnHover ? 'pointer' : 'default',
+              background: canCommit ? '#f0f0f0' : '#f8f8f8',
+              color: canCommit ? '#000' : '#bbb',
+              cursor: canCommit ? 'pointer' : 'default',
               fontSize: 12, fontWeight: 500,
             }}
           >
-            {committing ? 'Saving...' : '📸 Create Version Snapshot'}
+            {committing ? 'Saving...' : '📸 Make a Version Snapshot'}
           </button>
         </div>
       )}
