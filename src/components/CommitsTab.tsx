@@ -59,8 +59,8 @@ export function CommitsTab({
 
   function handleMouseLeave() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    setIsPreviewingOnHover(false);
     onTimelinePreviewEnd();
+    setIsPreviewingOnHover(false);
   }
 
   function handleCommitClick() {
