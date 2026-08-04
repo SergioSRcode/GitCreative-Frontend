@@ -27,6 +27,7 @@ export function CommitsTab({
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
   const [isPreviewingOnHover, setIsPreviewingOnHover] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lazily load thumbnails for visible commits
   useEffect(() => {
@@ -45,7 +46,20 @@ export function CommitsTab({
     loadThumbs();
 
     return () => { cancelled = true };
-  }, [commits])
+  }, [commits]);
+
+  function handleTouchStart(commit: CommitSummary) {
+    longPressTimer.current = setTimeout(() => {
+      setIsPreviewingOnHover(true);
+      onTimelinePreview(commit);
+    }, 500);
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    setIsPreviewingOnHover(false);
+    onTimelinePreviewEnd();
+  }
 
   function handleMouseEnter(commit: CommitSummary) {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -132,6 +146,8 @@ export function CommitsTab({
               key={commit.id}
               onMouseEnter={() => handleMouseEnter(commit)}
               onMouseLeave={handleMouseLeave}
+              onTouchStart={() => handleTouchStart(commit)}
+              onTouchEnd={handleTouchEnd}
               style={{
                 border: `1px solid ${isViewing ? '#888' : '#eee'}`,
                 borderRadius: 8, padding: 8,
