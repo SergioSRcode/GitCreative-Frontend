@@ -206,6 +206,75 @@ export class Compositor {
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
+
+  // Merges `sourceTexture` onto whatever is bound to `targetFramebuffer`,
+  // using `targetTexture`'s own current content as the backdrop — NOT the
+  // screen. This is distinct from drawLayer(), which always captures the
+  // screen as backdrop for normal on-screen layer compositing.
+  mergeInto(
+    sourceLayer: Layer,
+    targetLayer: Layer,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this;
+    // Snapshot target's CURRENT content into a temporary texture first,
+    // since we can't safely read from and write to the same texture at once
+    const tempPixels = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetLayer.framebuffer);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // Pre-composite the target's pixels over a white background before using
+    // them as the Multiply backdrop — otherwise transparent (0,0,0,0) regions
+    // force the multiply result to black, since raw RGB=0 multiplies to 0
+    // regardless of alpha, but "transparent" should behave like "white/no effect"
+    for (let i = 0; i < tempPixels.length; i += 4) {
+      const a = tempPixels[i + 3] / 255;
+
+      tempPixels[i]     = Math.round(tempPixels[i]     * a + 255 * (1 - a));
+      tempPixels[i + 1] = Math.round(tempPixels[i + 1] * a + 255 * (1 - a));
+      tempPixels[i + 2] = Math.round(tempPixels[i + 2] * a + 255 * (1 - a));
+      tempPixels[i + 3] = 255;  // now fully opaque white-backed representation
+    }
+
+    const tempTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tempTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Now safely draw: source (slot 0) blended against the temp snapshot (slot 1),
+    // writing into the real target framebuffer — no read/write collision
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetLayer.framebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.useProgram(this.program);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.positionLoc);
+    gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.texCoordLoc);
+    gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceLayer.texture);
+    gl.uniform1i(this.layerLoc, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tempTexture);
+    gl.uniform1i(this.backdropLoc, 1);
+
+    gl.uniform1f(this.opacityLoc, sourceLayer.opacity);
+    gl.uniform1i(this.blendModeLoc, BLEND_MODE_INT[sourceLayer.blendMode] ?? 0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    gl.deleteTexture(tempTexture);  // clean up — this was only ever needed for this one operation
+  }
 }
 
 

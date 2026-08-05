@@ -123,7 +123,7 @@ export function Canvas() {
     layersRef, layersDisplay, activeLayer, activeLayerId, setActiveLayerId,
     init, addLayer, deleteLayer, moveLayer,
     setVisibility, setOpacity, setBlendMode, renameLayer, 
-    clearLayer, loadLayers,
+    clearLayer, loadLayers, mergeLayers,
   } = useLayers();
 
   const { pushSnapshot, undo, redo, canUndo, canRedo } = useHistory();
@@ -1123,18 +1123,28 @@ export function Canvas() {
   }
 
   function handleWheel(e: React.WheelEvent<HTMLCanvasElement>) {
-    e.preventDefault()
+    e.preventDefault();
 
     // deltaY is negative when scrolling up/away (zoom in), positive when
     // scrolling down/toward you (zoom out) — this matches the standard
     // "scroll up to zoom in" convention used by most creative tools
-    const zoomSensitivity = 0.0015
-    const delta = -e.deltaY * zoomSensitivity
+    const zoomSensitivity = 0.0015;
+    const delta = -e.deltaY * zoomSensitivity;
 
     setZoom(prevZoom => {
-      const next = prevZoom + delta * prevZoom  // scales multiplicatively, feels more natural than a flat additive step
-      return Math.max(0.25, Math.min(4, next))  // clamp to the same range as the slider
-    })
+      const next = prevZoom + delta * prevZoom;  // scales multiplicatively, feels more natural than a flat additive step
+      return Math.max(0.25, Math.min(4, next));  // clamp to the same range as the slider
+    });
+  }
+
+  function handleMergeLayers(direction: 'up' | 'down', layerId: string) {
+    const gl = glRef.current;
+    const compositor = compositorRef.current;
+    if (!gl || !compositor) return;
+
+    mergeLayers(gl, compositor, direction, layerId);
+    compositeToScreen();
+    pushSnapshot(gl, layersRef.current);  // makes the merge undoable/no separate logic needed
   }
 
   useEffect(() => {
@@ -1646,6 +1656,8 @@ export function Canvas() {
         onBlendMode={setBlendMode}
         onRename={renameLayer}
         onClear={handleClearLayer}
+        onMergeUp={(id) => handleMergeLayers('up', id)}
+        onMergeDown={(id) => handleMergeLayers('down', id)}
 
         // Commit props
         viewingCommitId={viewingCommitId}

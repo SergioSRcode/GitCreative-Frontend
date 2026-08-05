@@ -25,6 +25,8 @@ type Props = {
   onBlendMode:    (id: string, blendMode: BlendMode) => void,
   onRename:       (id: string, name: string) => void,
   onClear:        (id: string) => void,
+  onMergeUp:      (id: string) => void,
+  onMergeDown:    (id: string) => void,
 
   // Commit props
   branchCommits: CommitSummary[]  // for Commits tab
@@ -129,6 +131,8 @@ export function RightPanel(props: Props) {
             onBlendMode={props.onBlendMode}
             onRename={props.onRename}
             onClear={props.onClear}
+            onMergeUp={props.onMergeUp}
+            onMergeDown={props.onMergeDown}
           />
         )}
 

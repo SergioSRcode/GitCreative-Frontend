@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Layer, BlendMode } from "../types/layer";
 import { createLayer } from "../rendering/createLayer";
 import type { DocumentMetadata } from "../types/document";
+import type { Compositor } from "../rendering/Compositor";
 
 export function useLayers() {
   const glRef = useRef<WebGL2RenderingContext | null>(null);
@@ -171,6 +172,50 @@ export function useLayers() {
     syncDisplay();
   }
 
+  // Merges the content of `sourceLayer` onto `targetLayer`, respecting the
+  // source layer's blend mode and opacity
+  function mergeLayerInto(
+    gl: WebGL2RenderingContext,
+    compositor: Compositor,
+    sourceLayer: Layer,
+    targetLayer: Layer,
+    width: number,
+    height: number
+  ) {
+    compositor.mergeInto(sourceLayer, targetLayer, width, height);
+  }
+
+  function mergeLayers(
+    gl: WebGL2RenderingContext,
+    compositor: Compositor,
+    direction: 'up' | 'down',
+    layerId: string
+  ) {
+    const layers = layersRef.current
+    const index  = layers.findIndex(l => l.id === layerId)
+    if (index === -1) return
+
+    const targetIndex = direction === 'up' ? index + 1 : index - 1
+    if (targetIndex < 0 || targetIndex >= layers.length) return  // nothing to merge with
+
+    const source = layers[index]
+    const target = layers[targetIndex]
+    const canvas = gl.canvas as HTMLCanvasElement
+
+    // Merge "up": source paints ONTO target (the layer above), source is removed
+    // Merge "down": source paints ONTO target (the layer below), source is removed
+    mergeLayerInto(gl, compositor, source, target, canvas.width, canvas.height)
+
+    const remaining = layers.filter(l => l.id !== source.id)
+    layersRef.current = remaining
+
+    if (activeLayerId === source.id) {
+      setActiveLayerId(target.id)
+    }
+
+    syncDisplay()
+  }
+
   return {
     layersRef,
     layersDisplay,
@@ -187,5 +232,6 @@ export function useLayers() {
     renameLayer,
     clearLayer,
     loadLayers,
+    mergeLayers,
   };
 }

@@ -15,18 +15,22 @@ type Props = {
   onOpacity: (id: string, opacity: number) => void,
   onBlendMode: (id: string, blendMode: BlendMode) => void,
   onRename: (id: string, name: string) => void,
-  onClear: (id: string) => void
+  onClear: (id: string) => void,
+  onMergeUp: (id: string) => void,
+  onMergeDown: (id: string) => void,
 };
 
 export function LayerPanel({
   layers, activeLayerId, 
   onSelect, onAdd, onDelete, onMoveUp, onMoveDown, 
   onVisibility, onOpacity, onBlendMode, onRename, onClear,
+  onMergeUp, onMergeDown
 }: Props) {
   // Reverses for display only => top layer on top
   // spread avoids mutating the array
   const displayed = [...layers].reverse();
 
+  const [openMenuLayerId, setOpenMenuLayerId] = useState<string | null>(null);
   const [scrollInfo, setScrollInfo] = useState({ scrollTop: 0, scrollHeight: 0, clientHeight: 0 });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -131,11 +135,52 @@ export function LayerPanel({
                     width: '100%', cursor: 'text',
                   }}
                 />
-                <button
-                  onClick={e => { e.stopPropagation(); onDelete(layer.id) }}
-                  title="Delete layer"
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, color: '#aaa' }}
-                >✕</button>
+                {/* After: three-dot menu */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      setOpenMenuLayerId(prev => prev === layer.id ? null : layer.id)
+                    }}
+                    title="Layer options"
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: '#aaa', padding: '0 4px' }}
+                  >⋯</button>
+
+                  {openMenuLayerId === layer.id && (
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        position: 'absolute', top: '100%', right: 0, zIndex: 30,
+                        background: 'white', border: '1px solid #ddd', borderRadius: 8,
+                        padding: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                        display: 'flex', flexDirection: 'column', gap: 2, minWidth: 130,
+                      }}
+                    >
+                      <button
+                        onClick={() => { 
+                          if (confirm('Merge this layer? This cannot be undone.')) {
+                            onMergeUp(layer.id); 
+                          }
+                          setOpenMenuLayerId(null);
+                        }}
+                        style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+                      >⬆ Merge up</button>
+                      <button
+                        onClick={() => { 
+                          if (confirm('Merge this layer? This cannot be undone.')) {
+                            onMergeDown(layer.id);
+                          }
+                          setOpenMenuLayerId(null);
+                        }}
+                        style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+                      >⬇ Merge down</button>
+                      <button
+                        onClick={() => { onDelete(layer.id); setOpenMenuLayerId(null) }}
+                        style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12, color: '#d33' }}
+                      >✕ Delete</button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Visibility + reorder + blend mode */}
