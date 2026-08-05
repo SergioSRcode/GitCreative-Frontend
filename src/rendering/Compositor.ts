@@ -1,6 +1,7 @@
 import vertSrc from '../shaders/composite.vert?raw';
 import fragSrc from '../shaders/composite.frag?raw';
 import blitFragSrc from '../shaders/blit.frag?raw';
+import clipMaskFragSrc from '../shaders/clipMask.frag?raw';
 import type { Layer } from '../types/layer';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -58,6 +59,9 @@ export class Compositor {
   private blitProgram: WebGLProgram;
   private blitTextureLoc: WebGLUniformLocation;
   private blitOpacityLoc: WebGLUniformLocation;
+  private clipProgram: WebGLProgram;
+  private clipTargetLoc: WebGLUniformLocation;
+  private clipMaskLoc: WebGLUniformLocation;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -100,6 +104,9 @@ export class Compositor {
     this.blitProgram     = createProgram(gl, vertSrc, blitFragSrc) // reuses the same vertex shader
     this.blitTextureLoc  = gl.getUniformLocation(this.blitProgram, 'u_texture')!
     this.blitOpacityLoc  = gl.getUniformLocation(this.blitProgram, 'u_opacity')!
+    this.clipProgram    = createProgram(gl, vertSrc, clipMaskFragSrc)
+    this.clipTargetLoc  = gl.getUniformLocation(this.clipProgram, 'u_target')!
+    this.clipMaskLoc    = gl.getUniformLocation(this.clipProgram, 'u_mask')!
   }
 
   private initBackdrop(width: number, height: number) {
@@ -274,6 +281,59 @@ export class Compositor {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     gl.deleteTexture(tempTexture);  // clean up — this was only ever needed for this one operation
+  }
+
+  // Clips targetTexture's alpha by maskTexture's alpha, writing the result
+  // into targetFramebuffer — used right before a finished stroke commits,
+  // so drawing outside the active selection has no visible effect
+  clipByMask(
+    targetTexture: WebGLTexture,
+    targetFramebuffer: WebGLFramebuffer,
+    maskTexture: WebGLTexture,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this;
+
+    // Snapshot target first (can't read/write same texture in one pass)
+    const tempPixels = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    const tempTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tempTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);  // straight overwrite — this IS the new content, not blended
+    gl.useProgram(this.clipProgram);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.positionLoc);
+    gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.texCoordLoc);
+    gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tempTexture);
+    gl.uniform1i(this.clipTargetLoc, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+    gl.uniform1i(this.clipMaskLoc, 1);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    gl.deleteTexture(tempTexture);
+    gl.enable(gl.BLEND);  // restore default state for whatever draws next
   }
 }
 

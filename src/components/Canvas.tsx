@@ -669,6 +669,16 @@ export function Canvas() {
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
     const gl = glRef.current;
     if (gl && activeLayer && strokeMaskRef.current && brush?.type !== 'eraser') {
+      // Clip the finished stroke against the active selection, if one exists —
+      // outside the selected region, the stroke has no effect
+      if (selectionActive && selectionMaskRef.current) {
+        compositorRef.current!.clipByMask(
+          strokeMaskRef.current.texture,
+          strokeMaskRef.current.framebuffer,
+          selectionMaskRef.current.texture,
+          gl.canvas.width, gl.canvas.height
+        );
+      }
       // Commit the finished stroke mask onto the real layer, once,
       // with normal alpha blending — safe from accumulation since
       // this is a single blend operation, not many overlapping dabs
