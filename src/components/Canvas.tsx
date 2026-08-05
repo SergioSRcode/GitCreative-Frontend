@@ -63,6 +63,7 @@ export function Canvas() {
   const twoFingerTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const selectionMaskRef = useRef<Layer | null>(null);
   const preEraseSnapshotRef = useRef<Uint8Array | null>(null);
+  const selectionActiveRef = useRef(false);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -286,7 +287,7 @@ export function Canvas() {
 
     // if a selection is active, restore outside it on every tick,
     // so drawing outside the selection never visibly persists even mid-stroke
-    if (selectionActive && preEraseSnapshotRef.current) {
+    if (selectionActiveRef.current && preEraseSnapshotRef.current) {
       const canvas = gl.canvas as HTMLCanvasElement;
       const originalTexture = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, originalTexture);
@@ -381,6 +382,14 @@ export function Canvas() {
       );
     }
 
+    if (selectionActiveRef.current && selectionMaskRef.current) {
+      compositorRef.current!.drawSelectionOutline(
+        selectionMaskRef.current.texture,
+        canvas.width, canvas.height,
+        0  // static for now — Sub-Step B adds real animation
+      );
+    }
+
     // re-enables blending for any subsequent draw calls
     gl.enable(gl.BLEND);
     gl.blendEquation(gl.FUNC_ADD);
@@ -432,20 +441,6 @@ export function Canvas() {
         'max'
       );
     }
-
-    // DEBUG START — check what actually landed in the mask/layer after rendering
-    // const targetFB = brush.type === 'eraser' ? activeLayer.framebuffer : strokeMaskRef.current!.framebuffer
-    // const lastPoint = smoothed[smoothed.length - 1]
-    // const testPixel = new Uint8Array(4)
-    // gl.bindFramebuffer(gl.FRAMEBUFFER, targetFB)
-    // gl.readPixels(
-    //   Math.floor(lastPoint.x),
-    //   Math.floor(gl.canvas.height - lastPoint.y),
-    //   1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
-    // )
-    // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    // console.log('pixel after render:', testPixel, 'target size:', gl.canvas.width, gl.canvas.height, 'point:', lastPoint.x, lastPoint.y)
-    // DEBUG END
 
     compositeToScreen();
   }
@@ -528,7 +523,7 @@ export function Canvas() {
 
       // Same pre-stroke snapshot pattern as eraser, since airbrush also
       // writes directly to the layer with no separate in-progress buffer
-      if (selectionActive && activeLayer) {
+      if (selectionActiveRef.current && activeLayer) {
         const gl = glRef.current!;
         const canvas = canvasRef.current!;
         const snapshot = new Uint8Array(canvas.width * canvas.height * 4);
@@ -559,7 +554,7 @@ export function Canvas() {
 
     canvasRef.current!.setPointerCapture(e.pointerId);
 
-    if (brush?.type === 'eraser' && selectionActive && activeLayer) {
+    if (brush?.type === 'eraser' && selectionActiveRef.current && activeLayer) {
       const gl = glRef.current!;
       const canvas = canvasRef.current!;
       const snapshot = new Uint8Array(canvas.width * canvas.height * 4);
@@ -713,7 +708,7 @@ export function Canvas() {
       return;
     }
 
-    if (brush?.type === 'eraser' && selectionActive && preEraseSnapshotRef.current && activeLayer) {
+    if (brush?.type === 'eraser' && selectionActiveRef.current && preEraseSnapshotRef.current && activeLayer) {
       const gl = glRef.current!;
       const canvas = canvasRef.current!;
 
@@ -746,7 +741,7 @@ export function Canvas() {
     if (gl && activeLayer && strokeMaskRef.current && brush?.type !== 'eraser') {
       // Clip the finished stroke against the active selection, if one exists —
       // outside the selected region, the stroke has no effect
-      if (selectionActive && selectionMaskRef.current) {
+      if (selectionActiveRef.current && selectionMaskRef.current) {
         compositorRef.current!.clipByMask(
           strokeMaskRef.current.texture,
           strokeMaskRef.current.framebuffer,
@@ -849,7 +844,7 @@ export function Canvas() {
     ];
 
     let selectionMaskPixels: Uint8Array | null = null;
-    if (selectionActive && selectionMaskRef.current) {
+    if (selectionActiveRef.current && selectionMaskRef.current) {
       selectionMaskPixels = new Uint8Array(canvas.width * canvas.height * 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, selectionMaskRef.current.framebuffer);
       gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, selectionMaskPixels);
@@ -1267,13 +1262,8 @@ export function Canvas() {
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    // const centerIndex = (Math.floor(canvas.height / 2) * canvas.width + Math.floor(canvas.width / 2)) * 4
-    // console.log('Active layer center pixel (direct read, no mask involved):', pixels.slice(centerIndex, centerIndex + 4))
-    // console.log('Active layer id:', activeLayer.id, activeLayer.name)
-    // DEBUG END
     gl.bindTexture(gl.TEXTURE_2D, selectionMaskRef.current.texture);
-    // Inside handleSelectLayerContent, right before texSubImage2D
-    // console.log('Attempting texSubImage2D at:', canvas.width, canvas.height) // DEBUG
+
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, 0,
       canvas.width, canvas.height,
@@ -1282,7 +1272,9 @@ export function Canvas() {
     );
     gl.bindTexture(gl.TEXTURE_2D, null);
 
+    selectionActiveRef.current = true;
     setSelectionActive(true);
+    compositeToScreen();
   }
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import fragSrc from '../shaders/composite.frag?raw';
 import blitFragSrc from '../shaders/blit.frag?raw';
 import clipMaskFragSrc from '../shaders/clipMask.frag?raw';
 import restoreOutsideMaskFragSrc from '../shaders/restoreOutsideMask.frag?raw';
+import selectionOutlineFragSrc from '../shaders/selectionOutline.frag?raw';
 import type { Layer } from '../types/layer';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -63,10 +64,14 @@ export class Compositor {
   private clipProgram: WebGLProgram;
   private clipTargetLoc: WebGLUniformLocation;
   private clipMaskLoc: WebGLUniformLocation;
-  private restoreProgram: WebGLProgram
-  private restoreOriginalLoc: WebGLUniformLocation
-  private restoreCurrentLoc: WebGLUniformLocation
-  private restoreMaskLoc: WebGLUniformLocation
+  private restoreProgram: WebGLProgram;
+  private restoreOriginalLoc: WebGLUniformLocation;
+  private restoreCurrentLoc: WebGLUniformLocation;
+  private restoreMaskLoc: WebGLUniformLocation;
+  private outlineProgram: WebGLProgram;
+  private outlineMaskLoc: WebGLUniformLocation;
+  private outlineTexelSizeLoc: WebGLUniformLocation;
+  private outlineTimeLoc: WebGLUniformLocation;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -118,6 +123,11 @@ export class Compositor {
     this.restoreOriginalLoc  = gl.getUniformLocation(this.restoreProgram, 'u_original')!;
     this.restoreCurrentLoc   = gl.getUniformLocation(this.restoreProgram, 'u_current')!;
     this.restoreMaskLoc      = gl.getUniformLocation(this.restoreProgram, 'u_mask')!;
+
+    this.outlineProgram        = createProgram(gl, vertSrc, selectionOutlineFragSrc);
+    this.outlineMaskLoc        = gl.getUniformLocation(this.outlineProgram, 'u_mask')!;
+    this.outlineTexelSizeLoc   = gl.getUniformLocation(this.outlineProgram, 'u_texelSize')!;
+    this.outlineTimeLoc        = gl.getUniformLocation(this.outlineProgram, 'u_time')!;
   }
 
   private initBackdrop(width: number, height: number) {
@@ -404,6 +414,38 @@ export class Compositor {
 
     gl.deleteTexture(currentTexture);
     gl.enable(gl.BLEND);
+  }
+
+  drawSelectionOutline(
+    maskTexture: WebGLTexture,
+    width: number,
+    height: number,
+    time: number
+  ) {
+    const { gl } = this;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);  // draws onto the screen, on top of everything else
+    gl.viewport(0, 0, width, height);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.outlineProgram);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.positionLoc);
+    gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.texCoordLoc);
+    gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+    gl.uniform1i(this.outlineMaskLoc, 0);
+
+    gl.uniform2f(this.outlineTexelSizeLoc, 1.0 / width, 1.0 / height);
+    gl.uniform1f(this.outlineTimeLoc, time);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 }
 
