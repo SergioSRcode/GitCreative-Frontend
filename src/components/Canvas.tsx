@@ -62,6 +62,7 @@ export function Canvas() {
   const lastTwoFingerTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const twoFingerTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null);
   const selectionMaskRef = useRef<Layer | null>(null);
+  const preEraseSnapshotRef = useRef<Uint8Array | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -281,6 +282,28 @@ export function Canvas() {
         activeLayer.framebuffer,
         gl.canvas.width, gl.canvas.height
       );
+    }
+
+    // if a selection is active, restore outside it on every tick,
+    // so drawing outside the selection never visibly persists even mid-stroke
+    if (selectionActive && preEraseSnapshotRef.current) {
+      const canvas = gl.canvas as HTMLCanvasElement;
+      const originalTexture = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, originalTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, preEraseSnapshotRef.current);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      compositorRef.current!.restoreOutsideMask(
+        activeLayer.framebuffer,
+        originalTexture,
+        selectionMaskRef.current!.texture,
+        canvas.width, canvas.height
+      );
+
+      gl.deleteTexture(originalTexture);
     }
 
     // keeps only the most recent point = still position
@@ -503,6 +526,20 @@ export function Canvas() {
       canvasRef.current!.setPointerCapture(e.pointerId);
       isDrawing.current = true;
 
+      // Same pre-stroke snapshot pattern as eraser, since airbrush also
+      // writes directly to the layer with no separate in-progress buffer
+      if (selectionActive && activeLayer) {
+        const gl = glRef.current!;
+        const canvas = canvasRef.current!;
+        const snapshot = new Uint8Array(canvas.width * canvas.height * 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, snapshot);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        preEraseSnapshotRef.current = snapshot;
+      } else {
+        preEraseSnapshotRef.current = null;
+      }
+
       const point = getPoint(e);
       airbrushPathPoints.current = [{ x: point.x, y: point.y, pressure: point.pressure, isPen: point.isPen }];
       pushRecentColor(rgb);
@@ -521,6 +558,19 @@ export function Canvas() {
     }
 
     canvasRef.current!.setPointerCapture(e.pointerId);
+
+    if (brush?.type === 'eraser' && selectionActive && activeLayer) {
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+      const snapshot = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, snapshot);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      preEraseSnapshotRef.current = snapshot;
+    } else {
+      preEraseSnapshotRef.current = null;
+    }
+
     isDrawing.current = true;
     currentPoints.current = [getPoint(e)];
     pushRecentColor(rgb);
@@ -656,10 +706,35 @@ export function Canvas() {
       }
 
       airbrushPathPoints.current = [];
+      preEraseSnapshotRef.current = null;
 
       const gl = glRef.current!;
       pushSnapshot(gl, layersRef.current);
       return;
+    }
+
+    if (brush?.type === 'eraser' && selectionActive && preEraseSnapshotRef.current && activeLayer) {
+      const gl = glRef.current!;
+      const canvas = canvasRef.current!;
+
+      // Rebuild a texture from the pre-erase snapshot to use as "original"
+      const originalTexture = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, originalTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, preEraseSnapshotRef.current);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      compositorRef.current!.restoreOutsideMask(
+        activeLayer.framebuffer,
+        originalTexture,
+        selectionMaskRef.current!.texture,
+        canvas.width, canvas.height
+      );
+
+      gl.deleteTexture(originalTexture);
+      preEraseSnapshotRef.current = null;
     }
 
     currentPoints.current.push(getPoint(e));
@@ -773,9 +848,18 @@ export function Canvas() {
       255,
     ];
 
+    let selectionMaskPixels: Uint8Array | null = null;
+    if (selectionActive && selectionMaskRef.current) {
+      selectionMaskPixels = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, selectionMaskRef.current.framebuffer);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, selectionMaskPixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
     const didFill = floodFill(
       pixels, canvas.width, canvas.height,
-      x, y, fillColor, fillTolerance
+      x, y, fillColor, fillTolerance,
+      selectionMaskPixels
     );
 
     if (!didFill) return;

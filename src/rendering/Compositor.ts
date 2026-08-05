@@ -2,6 +2,7 @@ import vertSrc from '../shaders/composite.vert?raw';
 import fragSrc from '../shaders/composite.frag?raw';
 import blitFragSrc from '../shaders/blit.frag?raw';
 import clipMaskFragSrc from '../shaders/clipMask.frag?raw';
+import restoreOutsideMaskFragSrc from '../shaders/restoreOutsideMask.frag?raw';
 import type { Layer } from '../types/layer';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -62,6 +63,10 @@ export class Compositor {
   private clipProgram: WebGLProgram;
   private clipTargetLoc: WebGLUniformLocation;
   private clipMaskLoc: WebGLUniformLocation;
+  private restoreProgram: WebGLProgram
+  private restoreOriginalLoc: WebGLUniformLocation
+  private restoreCurrentLoc: WebGLUniformLocation
+  private restoreMaskLoc: WebGLUniformLocation
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -101,12 +106,18 @@ export class Compositor {
     this.initBackdrop(gl.canvas.width, gl.canvas.height);
 
     // Second, simpler program specifically for blitDirect
-    this.blitProgram     = createProgram(gl, vertSrc, blitFragSrc) // reuses the same vertex shader
-    this.blitTextureLoc  = gl.getUniformLocation(this.blitProgram, 'u_texture')!
-    this.blitOpacityLoc  = gl.getUniformLocation(this.blitProgram, 'u_opacity')!
-    this.clipProgram    = createProgram(gl, vertSrc, clipMaskFragSrc)
-    this.clipTargetLoc  = gl.getUniformLocation(this.clipProgram, 'u_target')!
-    this.clipMaskLoc    = gl.getUniformLocation(this.clipProgram, 'u_mask')!
+    this.blitProgram     = createProgram(gl, vertSrc, blitFragSrc); // reuses the same vertex shader
+    this.blitTextureLoc  = gl.getUniformLocation(this.blitProgram, 'u_texture')!;
+    this.blitOpacityLoc  = gl.getUniformLocation(this.blitProgram, 'u_opacity')!;
+
+    this.clipProgram    = createProgram(gl, vertSrc, clipMaskFragSrc);
+    this.clipTargetLoc  = gl.getUniformLocation(this.clipProgram, 'u_target')!;
+    this.clipMaskLoc    = gl.getUniformLocation(this.clipProgram, 'u_mask')!;
+
+    this.restoreProgram      = createProgram(gl, vertSrc, restoreOutsideMaskFragSrc);
+    this.restoreOriginalLoc  = gl.getUniformLocation(this.restoreProgram, 'u_original')!;
+    this.restoreCurrentLoc   = gl.getUniformLocation(this.restoreProgram, 'u_current')!;
+    this.restoreMaskLoc      = gl.getUniformLocation(this.restoreProgram, 'u_mask')!;
   }
 
   private initBackdrop(width: number, height: number) {
@@ -334,6 +345,65 @@ export class Compositor {
 
     gl.deleteTexture(tempTexture);
     gl.enable(gl.BLEND);  // restore default state for whatever draws next
+  }
+
+  // Restores `originalTexture`'s pixels into `targetFramebuffer` wherever
+  // `maskTexture`'s alpha is 0 — used to "undo" an eraser's effect outside
+  // the active selection, since the eraser writes directly to the layer
+  // with no separate in-progress buffer to clip before committing
+  restoreOutsideMask(
+    targetFramebuffer: WebGLFramebuffer,
+    originalTexture: WebGLTexture,
+    maskTexture: WebGLTexture,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.restoreProgram);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.positionLoc);
+    gl.vertexAttribPointer(this.positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.texCoordLoc);
+    gl.vertexAttribPointer(this.texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, originalTexture);
+    gl.uniform1i(this.restoreOriginalLoc, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    // The CURRENT (post-erase) content is already in targetFramebuffer's
+    // texture — we read it via a snapshot first, same temp-texture pattern
+    // as mergeInto and clipByMask, to avoid a read/write collision
+    const currentPixels = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, currentPixels);
+
+    const currentTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, currentTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, currentPixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, currentTexture);
+    gl.uniform1i(this.restoreCurrentLoc, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+    gl.uniform1i(this.restoreMaskLoc, 2);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    gl.deleteTexture(currentTexture);
+    gl.enable(gl.BLEND);
   }
 }
 

@@ -33,7 +33,8 @@ export function floodFill(
   startX: number,
   startY: number,
   fillColor: RGBA,
-  tolerance: number
+  tolerance: number,
+  selectionMask: Uint8Array | null = null  // optional
 ): boolean {
   const targetColor = getPixel(pixels, startX, startY, width);
 
@@ -50,6 +51,12 @@ export function floodFill(
     const index = queue.pop()!;
     const x = index % width;
     const y = Math.floor(index / width);
+
+    // Skips this pixel entirely if it's outside an active selection
+    if (selectionMask) {
+      const maskAlpha = selectionMask[index * 4 + 3];
+      if (maskAlpha === 0) continue;
+    }
 
     const current = getPixel(pixels, x, y, width);
     if (!colorsMatch(current, targetColor, tolerance)) continue;
