@@ -59,6 +59,9 @@ export function Canvas() {
   const lastToolRef = useRef<Tool>('ink');  // remembers whichever tool was active before switching to eraser
   const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ distance: number; zoom: number; midX: number; midY: number } | null>(null);
+  const lastTwoFingerTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
+  const twoFingerTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null);
+  const selectionMaskRef = useRef<Layer | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -98,8 +101,8 @@ export function Canvas() {
   const [isPanningActive, setIsPanningActive] = useState(false);
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 840);
   const [rightPanelOpen, setRightPanelOpen] = useState(!isNarrowScreen);
-  const lastTwoFingerTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
-  const twoFingerTapStartRef = useRef<{ time: number; x: number; y: number } | null>(null)
+  const [selectionActive, setSelectionActive] = useState(false);
+
 
   useEffect(() => {
     function handleWidthCheck() { 
@@ -177,6 +180,7 @@ export function Canvas() {
         gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
         setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
         recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+        recreateSelectionMask(gl, doc.metadata.width, doc.metadata.height);
         fitCanvasToScreen(canvas);
 
         loadLayers(gl, doc.metadata, doc.layerPixels);
@@ -202,6 +206,7 @@ export function Canvas() {
         gl.viewport(0, 0, project.width, project.height);
         setCanvasPixelSize({ width: project.width, height: project.height });
         recreateStrokeMask(gl, project.width, project.height);
+        recreateSelectionMask(gl, project.width, project.height);  // necessary?
         fitCanvasToScreen(canvas);
 
         init(gl, project.width, project.height);
@@ -236,6 +241,10 @@ export function Canvas() {
 
   function recreateStrokeMask(gl: WebGL2RenderingContext, width: number, height: number) {
     strokeMaskRef.current = createLayer(gl, width, height, '__stroke_mask__');
+  }
+
+  function recreateSelectionMask(gl: WebGL2RenderingContext, width: number, height: number) {
+    selectionMaskRef.current = createLayer(gl, width, height, '__selection_mask__');
   }
 
   function airbrushTick() {
@@ -402,17 +411,17 @@ export function Canvas() {
     }
 
     // DEBUG START — check what actually landed in the mask/layer after rendering
-    const targetFB = brush.type === 'eraser' ? activeLayer.framebuffer : strokeMaskRef.current!.framebuffer
-    const lastPoint = smoothed[smoothed.length - 1]
-    const testPixel = new Uint8Array(4)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFB)
-    gl.readPixels(
-      Math.floor(lastPoint.x),
-      Math.floor(gl.canvas.height - lastPoint.y),
-      1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
-    )
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    console.log('pixel after render:', testPixel, 'target size:', gl.canvas.width, gl.canvas.height, 'point:', lastPoint.x, lastPoint.y)
+    // const targetFB = brush.type === 'eraser' ? activeLayer.framebuffer : strokeMaskRef.current!.framebuffer
+    // const lastPoint = smoothed[smoothed.length - 1]
+    // const testPixel = new Uint8Array(4)
+    // gl.bindFramebuffer(gl.FRAMEBUFFER, targetFB)
+    // gl.readPixels(
+    //   Math.floor(lastPoint.x),
+    //   Math.floor(gl.canvas.height - lastPoint.y),
+    //   1, 1, gl.RGBA, gl.UNSIGNED_BYTE, testPixel
+    // )
+    // gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    // console.log('pixel after render:', testPixel, 'target size:', gl.canvas.width, gl.canvas.height, 'point:', lastPoint.x, lastPoint.y)
     // DEBUG END
 
     compositeToScreen();
@@ -860,6 +869,7 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      recreateSelectionMask(gl, doc.metadata.width, doc.metadata.height);
       fitCanvasToScreen(canvas);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
@@ -892,6 +902,7 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      recreateSelectionMask(gl, doc.metadata.width, doc.metadata.height);
       fitCanvasToScreen(canvas);
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
@@ -1100,6 +1111,7 @@ export function Canvas() {
         gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
         setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
         recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+        recreateSelectionMask(gl, doc.metadata.width, doc.metadata.height);
         fitCanvasToScreen(canvas);
       }
 
@@ -1147,6 +1159,38 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);  // makes the merge undoable/no separate logic needed
   }
 
+  function handleSelectLayerContent() {
+    const gl = glRef.current;
+    if (!gl || !activeLayer || !selectionMaskRef.current) return;
+
+    // Copy the active layer's current content directly into the selection
+    // mask's own texture — the mask's alpha channel becomes "is this pixel
+    // part of the selection", inherited directly from the layer's own alpha
+    const canvas = canvasRef.current!;
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // const centerIndex = (Math.floor(canvas.height / 2) * canvas.width + Math.floor(canvas.width / 2)) * 4
+    // console.log('Active layer center pixel (direct read, no mask involved):', pixels.slice(centerIndex, centerIndex + 4))
+    // console.log('Active layer id:', activeLayer.id, activeLayer.name)
+    // DEBUG END
+    gl.bindTexture(gl.TEXTURE_2D, selectionMaskRef.current.texture);
+    // Inside handleSelectLayerContent, right before texSubImage2D
+    // console.log('Attempting texSubImage2D at:', canvas.width, canvas.height) // DEBUG
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0,
+      canvas.width, canvas.height,
+      gl.RGBA, gl.UNSIGNED_BYTE,
+      pixels
+    );
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    setSelectionActive(true);
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     // guards agains React strict mode double-invocation in development
@@ -1164,12 +1208,7 @@ export function Canvas() {
     // A reusable transparent buffer where the CURRENT stroke's dabs accumulate
     // via MAX blending, kept separate from the real layer until the stroke finishes
     strokeMaskRef.current = createLayer(gl, canvas.width || 1, canvas.height || 1, '__stroke_mask__');
-
-    // resizeCanvas(canvas);
-    // setCanvasPixelSize({ width: canvas.width, height: canvas.height });
-    // init(gl, canvas.width, canvas.height);
-    // pushSnapshot(gl, layersRef.current);
-    // compositeToScreen();
+    selectionMaskRef.current = createLayer(gl, canvas.width || 1, canvas.height || 1, '__selection_mask__');
 
     // Handles an imported .gitcreative file (from Gallery import) if present,
     // otherwise loads the project normally from the URL
@@ -1184,6 +1223,7 @@ export function Canvas() {
       gl.viewport(0, 0, doc.metadata.width, doc.metadata.height);
       setCanvasPixelSize({ width: doc.metadata.width, height: doc.metadata.height });
       recreateStrokeMask(gl, doc.metadata.width, doc.metadata.height);
+      recreateSelectionMask(gl, doc.metadata.width, doc.metadata.height);
       fitCanvasToScreen(canvas);
 
       init(gl, doc.metadata.width, doc.metadata.height);
@@ -1368,6 +1408,7 @@ export function Canvas() {
           boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         }}
       >
+        <button onClick={handleSelectLayerContent}>TEST: Select Layer Content</button>
         {/* Export dropdown */}
         <div className="toolbar-group" style={{ position: 'relative' }}>
           <button
