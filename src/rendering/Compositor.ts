@@ -562,35 +562,35 @@ export class Compositor {
     offsetX: number,
     offsetY: number,
     width: number,
-    height: number
+    height: number,
   ) {
-    const { gl } = this
+    const { gl } = this;
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer)
-    gl.viewport(0, 0, width, height)
-    gl.disable(gl.BLEND)
-    gl.useProgram(this.blitShiftedProgram)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.blitShiftedProgram);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
-    gl.enableVertexAttribArray(this.blitShiftedPositionLoc)
-    gl.vertexAttribPointer(this.blitShiftedPositionLoc, 2, gl.FLOAT, false, 0, 0)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.blitShiftedPositionLoc);
+    gl.vertexAttribPointer(this.blitShiftedPositionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer)
-    gl.enableVertexAttribArray(this.blitShiftedTexCoordLoc)
-    gl.vertexAttribPointer(this.blitShiftedTexCoordLoc, 2, gl.FLOAT, false, 0, 0)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.blitShiftedTexCoordLoc);
+    gl.vertexAttribPointer(this.blitShiftedTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
 
-    const offsetClipX = (offsetX / width) * 2
-    const offsetClipY = -(offsetY / height) * 2
-    gl.uniform2f(this.blitShiftedOffsetLoc, offsetClipX, offsetClipY)
+    const offsetClipX = (offsetX / width) * 2;
+    const offsetClipY = -(offsetY / height) * 2;
+    gl.uniform2f(this.blitShiftedOffsetLoc, offsetClipX, offsetClipY);
 
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, sourceTexture)
-    gl.uniform1i(this.blitShiftedTextureLoc, 0)
-    gl.uniform1f(this.blitShiftedOpacityLoc, 1.0)
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+    gl.uniform1i(this.blitShiftedTextureLoc, 0);
+    gl.uniform1f(this.blitShiftedOpacityLoc, 1.0);
 
-    gl.drawArrays(gl.TRIANGLES, 0, 6)
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    gl.enable(gl.BLEND)  // restore default for subsequent draws
+    gl.enable(gl.BLEND);  // restores default for subsequent draws
   }
 }
 

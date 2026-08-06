@@ -785,6 +785,45 @@ export function Canvas() {
     // takes snapshot after stroke has been committed to layer texture (used for undo/redo)
     const gl = glRef.current;
     if (gl && activeLayer && strokeMaskRef.current && brush?.type !== 'eraser') {
+      const canvas = gl.canvas as HTMLCanvasElement;
+
+      // Reads both the stroke mask (source) and the layer's current content (destination)
+      const srcPixels = new Uint8Array(canvas.width * canvas.height * 4);
+      const dstPixels = new Uint8Array(canvas.width * canvas.height * 4);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, srcPixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, dstPixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      // Explicit straight-alpha "over" compositing — mathematically
+      // correct regardless of whether the destination is transparent, unlike
+      // GL's fixed-function blend which silently corrupts RGB wherever the
+      // destination alpha is 0
+      const result = new Uint8Array(srcPixels.length);
+      for (let i = 0; i < srcPixels.length; i += 4) {
+        const srcA = srcPixels[i + 3] / 255;
+        const dstA = dstPixels[i + 3] / 255;
+        const outA = srcA + dstA * (1 - srcA);
+
+        if (outA === 0) {
+          result[i] = 0; result[i+1] = 0; result[i+2] = 0; result[i+3] = 0;
+          continue;
+        }
+
+        for (let c = 0; c < 3; c++) {
+          const srcC = srcPixels[i + c];
+          const dstC = dstPixels[i + c];
+          result[i + c] = Math.round((srcC * srcA + dstC * dstA * (1 - srcA)) / outA);
+        }
+        result[i + 3] = Math.round(outA * 255);
+      }
+
+      gl.bindTexture(gl.TEXTURE_2D, activeLayer.texture);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, result);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
       // Clip the finished stroke against the active selection, if one exists —
       // outside the selected region, the stroke has no effect
       if (selectionActiveRef.current && selectionMaskRef.current) {
@@ -795,15 +834,6 @@ export function Canvas() {
           gl.canvas.width, gl.canvas.height
         );
       }
-      // Commit the finished stroke mask onto the real layer, once,
-      // with normal alpha blending — safe from accumulation since
-      // this is a single blend operation, not many overlapping dabs
-      compositorRef.current!.blitDirect(
-        strokeMaskRef.current.texture,
-        1.0,
-        activeLayer.framebuffer,
-        gl.canvas.width, gl.canvas.height
-      );
 
       // Clear the mask so the next stroke starts fresh
       gl.bindFramebuffer(gl.FRAMEBUFFER, strokeMaskRef.current.framebuffer);
@@ -1390,10 +1420,10 @@ export function Canvas() {
 
     const canvas = canvasRef.current!;
 
-    // Snap to whole pixels — avoids sub-pixel sampling artifacts compounding
+    // Snaps to whole pixels — avoids sub-pixel sampling artifacts compounding
     // across repeated moves, even with nearest-neighbor filtering
-    const snappedOffsetX = Math.round(lifted.offsetX)
-    const snappedOffsetY = Math.round(lifted.offsetY)
+    const snappedOffsetX = Math.round(lifted.offsetX);
+    const snappedOffsetY = Math.round(lifted.offsetY);
 
     compositorRef.current!.blitDirectShiftedOverwrite(
       lifted.texture, 
