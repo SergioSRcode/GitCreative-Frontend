@@ -64,6 +64,9 @@ export function Canvas() {
   const selectionMaskRef = useRef<Layer | null>(null);
   const preEraseSnapshotRef = useRef<Uint8Array | null>(null);
   const selectionActiveRef = useRef(false);
+  const selectionSourceLayerIdRef = useRef<string | null>(null);
+  const liftedContentRef = useRef<{ texture: WebGLTexture; offsetX: number; offsetY: number } | null>(null);
+  const moveDragStartRef = useRef({ x: 0, y: 0 });
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -104,7 +107,8 @@ export function Canvas() {
   const [isNarrowScreen, setIsNarrowScreen] = useState(window.innerWidth < 840);
   const [rightPanelOpen, setRightPanelOpen] = useState(!isNarrowScreen);
   const [selectionActive, setSelectionActive] = useState(false);
-
+  const [moveSelectionMode, setMoveSelectionMode] = useState(false);
+  const [selectionSourceLayerId, setSelectionSourceLayerId] = useState<string | null>(null);
 
   useEffect(() => {
     function handleWidthCheck() { 
@@ -368,6 +372,25 @@ export function Canvas() {
       compositor.drawLayer(layer, canvas.width, canvas.height);
     }
 
+    const lifted = liftedContentRef.current;
+
+    if (lifted) {
+      compositorRef.current!.blitDirectShifted(
+        lifted.texture, 1.0, null,
+        lifted.offsetX, lifted.offsetY,
+        canvas.width, canvas.height
+      );
+    }
+
+    if (selectionActiveRef.current && selectionMaskRef.current) {
+      compositorRef.current!.drawSelectionOutline(
+        selectionMaskRef.current.texture,
+        canvas.width, canvas.height,
+        lifted ? lifted.offsetX : 0,
+        lifted ? lifted.offsetY : 0
+      );
+    }
+
     // Overlay the in-progress stroke mask on top, purely for live preview —
     // this never touches the actual layer texture, only the screen
     if (strokeMaskRef.current && isDrawing.current) {
@@ -483,6 +506,16 @@ export function Canvas() {
 
     if (e.button !== 0) return;  // if not left click, do not draw
 
+    if (moveSelectionMode && activeLayer?.id === selectionSourceLayerIdRef.current) {
+      canvasRef.current!.setPointerCapture(e.pointerId);
+      moveDragStartRef.current = { x: e.clientX, y: e.clientY };
+      liftSelectedContent();
+
+      return;
+    }
+
+    if (moveSelectionMode) return; // move mode is on while on wrong layer - blocks drawing, moving selection not possible
+
     if (isPanMode) {
       canvasRef.current!.setPointerCapture(e.pointerId)
       isPanningRef.current = true
@@ -572,6 +605,16 @@ export function Canvas() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (moveSelectionMode && liftedContentRef.current) {
+      const dx = e.clientX - moveDragStartRef.current.x;
+      const dy = e.clientY - moveDragStartRef.current.y;
+      liftedContentRef.current.offsetX = dx;
+      liftedContentRef.current.offsetY = dy;
+      compositeToScreen();
+
+      return;
+    }
+
     if (activePointersRef.current.has(e.pointerId)) {
       activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
@@ -645,7 +688,6 @@ export function Canvas() {
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     const wasTwoFingerGesture = activePointersRef.current.size === 2;
-
     activePointersRef.current.delete(e.pointerId);
 
     if (activePointersRef.current.size < 2) {
@@ -681,9 +723,13 @@ export function Canvas() {
       twoFingerTapStartRef.current = null;
     }
 
-
     if (activePointersRef.current.size >= 1) return;  // still mid-gesture with another finger down
   
+    if (moveSelectionMode && liftedContentRef.current) {
+      dropLiftedContent();
+      return;
+    }
+
     if (isPanMode) {
       isPanningRef.current = false;
       setIsPanningActive(false);
@@ -1272,6 +1318,8 @@ export function Canvas() {
     );
     gl.bindTexture(gl.TEXTURE_2D, null);
 
+    selectionSourceLayerIdRef.current = layerId;
+    setSelectionSourceLayerId(layerId);
     selectionActiveRef.current = true;
     setSelectionActive(true);
     compositeToScreen();
@@ -1288,7 +1336,86 @@ export function Canvas() {
 
     selectionActiveRef.current = false;
     setSelectionActive(false);
+    selectionSourceLayerIdRef.current = null;
+    setSelectionSourceLayerId(null);
+    setMoveSelectionMode(false);
     compositeToScreen();
+  }
+
+  function liftSelectedContent() {
+    const gl = glRef.current;
+    if (!gl || !activeLayer || !selectionMaskRef.current) return;
+
+    const canvas = canvasRef.current!
+    const layerPixels = new Uint8Array(canvas.width * canvas.height * 4);
+    const maskPixels = new Uint8Array(canvas.width * canvas.height * 4);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, layerPixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, selectionMaskRef.current.framebuffer);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, maskPixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    const lifted = new Uint8Array(canvas.width * canvas.height * 4);
+    for (let i = 0; i < layerPixels.length; i += 4) {
+      if (maskPixels[i + 3] > 0) {
+        lifted[i] = layerPixels[i];
+        lifted[i + 1] = layerPixels[i + 1];
+        lifted[i + 2] = layerPixels[i + 2];
+        lifted[i + 3] = layerPixels[i + 3];
+        layerPixels[i] = 0; layerPixels[i + 1] = 0; layerPixels[i + 2] = 0; layerPixels[i + 3] = 0;
+      }
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, activeLayer.texture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, layerPixels);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    const liftedTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, liftedTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, lifted);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    liftedContentRef.current = { texture: liftedTexture, offsetX: 0, offsetY: 0 };
+    compositeToScreen();
+  }
+
+  function dropLiftedContent() {
+    const gl = glRef.current;
+    const lifted = liftedContentRef.current;
+    if (!gl || !activeLayer || !lifted || !selectionMaskRef.current) return;
+
+    const canvas = canvasRef.current!;
+
+    // Snap to whole pixels — avoids sub-pixel sampling artifacts compounding
+    // across repeated moves, even with nearest-neighbor filtering
+    const snappedOffsetX = Math.round(lifted.offsetX)
+    const snappedOffsetY = Math.round(lifted.offsetY)
+
+    compositorRef.current!.blitDirectShiftedOverwrite(
+      lifted.texture, 
+      activeLayer.framebuffer,
+      // lifted.offsetX, lifted.offsetY,
+      snappedOffsetX, snappedOffsetY,
+      canvas.width, canvas.height
+    );
+
+    compositorRef.current!.shiftMaskInPlace(
+      selectionMaskRef.current.texture,
+      selectionMaskRef.current.framebuffer,
+      // lifted.offsetX, lifted.offsetY,
+      snappedOffsetX, snappedOffsetY,
+      canvas.width, canvas.height
+    );
+
+    gl.deleteTexture(lifted.texture);
+    liftedContentRef.current = null;
+
+    compositeToScreen();
+    pushSnapshot(gl, layersRef.current);
   }
 
   useEffect(() => {
@@ -1824,30 +1951,38 @@ export function Canvas() {
         onDeleteBranch={handleDeleteBranch}
       />
 
+      {/* Selection Tools - clear, move */}
       {selectionActive && (
-        <button
-          onClick={handleClearSelection}
-          className="clear-selection-btn"
-          style={{
-            position: 'fixed',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 15,
-            padding: '10px 20px',
-            borderRadius: 24,
-            border: '1px solid #4a9eff',
-            background: '#eaf3ff',
-            color: '#1a6fd6',
-            fontSize: 13, fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 8,
-            boxShadow: '0 0 12px rgba(74, 158, 255, 0.5), 0 2px 8px rgba(0,0,0,0.15)',
-            animation: 'selectionGlow 1.8s ease-in-out infinite',
-          }}
-        >
-          <span style={{ fontSize: 15 }}>◻</span>
-          Clear Selection
-        </button>
+        <div className="selection-actions">
+          <button
+            onClick={handleClearSelection}
+            className="clear-selection-btn"
+            style={{
+              padding: '10px 20px', borderRadius: 24,
+              border: '1px solid #4a9eff', background: '#eaf3ff', color: '#1a6fd6',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 8,
+              boxShadow: '0 0 12px rgba(74, 158, 255, 0.5), 0 2px 8px rgba(0,0,0,0.15)',
+              animation: 'selectionGlow 1.8s ease-in-out infinite',
+            }}
+          >
+            <span style={{ fontSize: 15 }}>◻</span>
+            Clear
+          </button>
+
+          {activeLayer?.id === selectionSourceLayerId && (
+            <button
+              onClick={() => setMoveSelectionMode(m => !m)}
+              style={{
+                padding: '10px 20px', borderRadius: 24,
+                border: `1px solid ${moveSelectionMode ? '#4a9eff' : '#ddd'}`,
+                background: moveSelectionMode ? '#4a9eff' : 'white',
+                color: moveSelectionMode ? 'white' : '#333',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}
+            >✥ Move </button>
+          )}
+        </div>
       )}
 
       {/* Zoom Slider */}

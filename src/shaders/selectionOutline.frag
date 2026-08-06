@@ -3,18 +3,18 @@ precision mediump float;
 
 uniform sampler2D u_mask;
 uniform vec2 u_texelSize;   // 1.0 / canvas width, 1.0 / canvas height
-uniform float u_time;       // seconds, drives the marching animation
+uniform vec2 u_offsetUV;   // offsets in UV units, shifts what part of the mask is sampled
 in vec2 v_texCoord;
 out vec4 fragColor;
 
 void main() {
-  float center = texture(u_mask, v_texCoord).a;
+  vec2 sampleCoord = v_texCoord - u_offsetUV;  // shift sampling opposite to the visual offset
 
-  // Sample four neighbors, offset by one texel
-  float left  = texture(u_mask, v_texCoord + vec2(-u_texelSize.x, 0.0)).a;
-  float right = texture(u_mask, v_texCoord + vec2( u_texelSize.x, 0.0)).a;
-  float up    = texture(u_mask, v_texCoord + vec2(0.0,  u_texelSize.y)).a;
-  float down  = texture(u_mask, v_texCoord + vec2(0.0, -u_texelSize.y)).a;
+  float center = texture(u_mask, sampleCoord).a;
+  float left  = texture(u_mask, sampleCoord + vec2(-u_texelSize.x, 0.0)).a;
+  float right = texture(u_mask, sampleCoord + vec2( u_texelSize.x, 0.0)).a;
+  float up    = texture(u_mask, sampleCoord + vec2(0.0,  u_texelSize.y)).a;
+  float down  = texture(u_mask, sampleCoord + vec2(0.0, -u_texelSize.y)).a;
 
   // An "edge" pixel is inside the mask but has at least one neighbor outside it
   bool isInside = center > 0.5;
@@ -26,11 +26,8 @@ void main() {
     return;
   }
 
-  // Marching ants pattern: alternating dash based on position + time,
-  // using diagonal stripes (a common GPU trick — no true path parameterization
-  // needed, since we don't have an ordered boundary path, just edge pixels)
   float dashLength = 6.0;
-  float screenPos = (gl_FragCoord.x + gl_FragCoord.y) - u_time * 30.0;
+  float screenPos = (gl_FragCoord.x + gl_FragCoord.y);
   float dashPhase = mod(screenPos, dashLength * 2.0);
   bool isBlackDash = dashPhase < dashLength;
 

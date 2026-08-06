@@ -97,3 +97,21 @@
     box-shadow: 0 0 20px rgba(74, 158, 255, 0.85), 0 2px 8px rgba(0,0,0,0.15);
   }
 }
+
+.selection-actions {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(20px, env(safe-area-inset-bottom));
+  top: auto;
+  z-index: 15;
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 840px) {
+  .selection-actions {
+    top: max(20px, env(safe-area-inset-top));
+    bottom: auto;
+  }
+}

@@ -4,6 +4,8 @@ import blitFragSrc from '../shaders/blit.frag?raw';
 import clipMaskFragSrc from '../shaders/clipMask.frag?raw';
 import restoreOutsideMaskFragSrc from '../shaders/restoreOutsideMask.frag?raw';
 import selectionOutlineFragSrc from '../shaders/selectionOutline.frag?raw';
+import blitShiftedVertSrc from '../shaders/blitShifted.vert?raw';
+import blitShiftedFragSrc from '../shaders/blitShifted.frag?raw';
 import type { Layer } from '../types/layer';
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -61,17 +63,29 @@ export class Compositor {
   private blitProgram: WebGLProgram;
   private blitTextureLoc: WebGLUniformLocation;
   private blitOpacityLoc: WebGLUniformLocation;
+
   private clipProgram: WebGLProgram;
   private clipTargetLoc: WebGLUniformLocation;
   private clipMaskLoc: WebGLUniformLocation;
+
   private restoreProgram: WebGLProgram;
   private restoreOriginalLoc: WebGLUniformLocation;
   private restoreCurrentLoc: WebGLUniformLocation;
   private restoreMaskLoc: WebGLUniformLocation;
+
   private outlineProgram: WebGLProgram;
   private outlineMaskLoc: WebGLUniformLocation;
   private outlineTexelSizeLoc: WebGLUniformLocation;
-  private outlineTimeLoc: WebGLUniformLocation;
+  // private outlineTimeLoc: WebGLUniformLocation;
+
+  private blitShiftedProgram: WebGLProgram;
+  private blitShiftedPositionLoc: number;
+  private blitShiftedTexCoordLoc: number;
+  private blitShiftedOffsetLoc: WebGLUniformLocation;
+  private blitShiftedTextureLoc: WebGLUniformLocation;
+  private blitShiftedOpacityLoc: WebGLUniformLocation;
+
+  private outlineOffsetLoc: WebGLUniformLocation;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -127,7 +141,16 @@ export class Compositor {
     this.outlineProgram        = createProgram(gl, vertSrc, selectionOutlineFragSrc);
     this.outlineMaskLoc        = gl.getUniformLocation(this.outlineProgram, 'u_mask')!;
     this.outlineTexelSizeLoc   = gl.getUniformLocation(this.outlineProgram, 'u_texelSize')!;
-    this.outlineTimeLoc        = gl.getUniformLocation(this.outlineProgram, 'u_time')!;
+    // this.outlineTimeLoc        = gl.getUniformLocation(this.outlineProgram, 'u_time')!;
+
+    this.blitShiftedProgram      = createProgram(gl, blitShiftedVertSrc, blitShiftedFragSrc);
+    this.blitShiftedPositionLoc  = gl.getAttribLocation(this.blitShiftedProgram, 'a_position');
+    this.blitShiftedTexCoordLoc  = gl.getAttribLocation(this.blitShiftedProgram, 'a_texCoord');
+    this.blitShiftedOffsetLoc    = gl.getUniformLocation(this.blitShiftedProgram, 'u_offsetClip')!;
+    this.blitShiftedTextureLoc   = gl.getUniformLocation(this.blitShiftedProgram, 'u_texture')!;
+    this.blitShiftedOpacityLoc   = gl.getUniformLocation(this.blitShiftedProgram, 'u_opacity')!;
+
+    this.outlineOffsetLoc = gl.getUniformLocation(this.outlineProgram, 'u_offsetUV')!;
   }
 
   private initBackdrop(width: number, height: number) {
@@ -420,7 +443,8 @@ export class Compositor {
     maskTexture: WebGLTexture,
     width: number,
     height: number,
-    time: number
+    offsetX: number = 0,
+    offsetY: number = 0
   ) {
     const { gl } = this;
 
@@ -443,9 +467,130 @@ export class Compositor {
     gl.uniform1i(this.outlineMaskLoc, 0);
 
     gl.uniform2f(this.outlineTexelSizeLoc, 1.0 / width, 1.0 / height);
-    gl.uniform1f(this.outlineTimeLoc, time);
+    gl.uniform2f(this.outlineOffsetLoc, offsetX / width, -offsetY / height);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // Draws sourceTexture onto targetFramebuffer (or the screen, if null),
+  // shifted by (offsetX, offsetY) pixels. Used both for previewing lifted
+  // selection content mid-drag (target = null, screen) and for permanently
+  // stamping it into a layer at drop time (target = the layer's framebuffer).
+  blitDirectShifted(
+    sourceTexture: WebGLTexture,
+    opacity: number,
+    targetFramebuffer: WebGLFramebuffer | null,
+    offsetX: number,
+    offsetY: number,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.blitShiftedProgram);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.enableVertexAttribArray(this.blitShiftedPositionLoc);
+    gl.vertexAttribPointer(this.blitShiftedPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+    gl.enableVertexAttribArray(this.blitShiftedTexCoordLoc);
+    gl.vertexAttribPointer(this.blitShiftedTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+    // Convert pixel offset to clip-space units (-1..1 range spans the full canvas)
+    const offsetClipX = (offsetX / width) * 2;
+    const offsetClipY = -(offsetY / height) * 2;  // flip Y — clip space Y grows upward, pixels grow downward
+    gl.uniform2f(this.blitShiftedOffsetLoc, offsetClipX, offsetClipY);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+    gl.uniform1i(this.blitShiftedTextureLoc, 0);
+    gl.uniform1f(this.blitShiftedOpacityLoc, opacity);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // Permanently shifts maskTexture's own stored content by (offsetX, offsetY) —
+  // used once, at drop time, so future clipping/outline drawing reflects the
+  // selection's new position without needing an offset passed in anymore
+  shiftMaskInPlace(
+    maskTexture: WebGLTexture,
+    maskFramebuffer: WebGLFramebuffer,
+    offsetX: number,
+    offsetY: number,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this;
+
+    // Snapshot current mask content first — can't read/write the same texture at once
+    const tempPixels = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, maskFramebuffer);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+
+    const tempTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tempTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, tempPixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Clear the real mask, then blit the snapshot back in at the new offset
+    gl.bindFramebuffer(gl.FRAMEBUFFER, maskFramebuffer);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.viewport(0, 0, width, height);
+
+    this.blitDirectShifted(tempTexture, 1.0, maskFramebuffer, offsetX, offsetY, width, height);
+
+    gl.deleteTexture(tempTexture);
+  }
+
+  // Same as blitDirectShifted, but overwrites instead of blending — used
+  // specifically when dropping lifted selection content back into a layer,
+  // where the destination should already be empty (from the lift-time hole)
+  // and blending would cause partial-alpha edge pixels to compound over
+  // repeated drags.
+  blitDirectShiftedOverwrite(
+    sourceTexture: WebGLTexture,
+    targetFramebuffer: WebGLFramebuffer,
+    offsetX: number,
+    offsetY: number,
+    width: number,
+    height: number
+  ) {
+    const { gl } = this
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer)
+    gl.viewport(0, 0, width, height)
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.blitShiftedProgram)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
+    gl.enableVertexAttribArray(this.blitShiftedPositionLoc)
+    gl.vertexAttribPointer(this.blitShiftedPositionLoc, 2, gl.FLOAT, false, 0, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer)
+    gl.enableVertexAttribArray(this.blitShiftedTexCoordLoc)
+    gl.vertexAttribPointer(this.blitShiftedTexCoordLoc, 2, gl.FLOAT, false, 0, 0)
+
+    const offsetClipX = (offsetX / width) * 2
+    const offsetClipY = -(offsetY / height) * 2
+    gl.uniform2f(this.blitShiftedOffsetLoc, offsetClipX, offsetClipY)
+
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, sourceTexture)
+    gl.uniform1i(this.blitShiftedTextureLoc, 0)
+    gl.uniform1f(this.blitShiftedOpacityLoc, 1.0)
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+
+    gl.enable(gl.BLEND)  // restore default for subsequent draws
   }
 }
 

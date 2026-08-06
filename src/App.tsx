@@ -41,7 +41,9 @@ export default function App() {
           to   { opacity: 1; transform: scale(1); }
         }
 
-        button { cursor: pointer }
+        button { 
+          cursor: pointer 
+        }
 
         /* Comfortable touch targets on touch-capable devices */
         @media (pointer: coarse) {
