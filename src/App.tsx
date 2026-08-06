@@ -45,7 +45,7 @@ export default function App() {
         button { 
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          color: inherit !important;
+          color: inherit;
         }
 
         /* Comfortable touch targets on touch-capable devices */
