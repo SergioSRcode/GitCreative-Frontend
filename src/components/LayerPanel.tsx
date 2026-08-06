@@ -18,13 +18,14 @@ type Props = {
   onClear: (id: string) => void,
   onMergeUp: (id: string) => void,
   onMergeDown: (id: string) => void,
+  onSelectContent: (id: string) => void,
 };
 
 export function LayerPanel({
   layers, activeLayerId, 
   onSelect, onAdd, onDelete, onMoveUp, onMoveDown, 
   onVisibility, onOpacity, onBlendMode, onRename, onClear,
-  onMergeUp, onMergeDown
+  onMergeUp, onMergeDown, onSelectContent
 }: Props) {
   // Reverses for display only => top layer on top
   // spread avoids mutating the array
@@ -156,6 +157,14 @@ export function LayerPanel({
                         display: 'flex', flexDirection: 'column', gap: 2, minWidth: 130,
                       }}
                     >
+
+                      <button
+                        onClick={() => { onSelectContent(layer.id); setOpenMenuLayerId(null) }}
+                        style={{ textAlign: 'left', padding: '6px 10px', borderRadius: 4, border: 'none', background: 'white', cursor: 'pointer', fontSize: 12 }}
+                      >◻ Select content</button>
+
+                      <div style={{ height: 1, background: '#eee', margin: '2px 0' }} />
+
                       <button
                         onClick={() => { 
                           if (confirm('Merge this layer? This cannot be undone.')) {

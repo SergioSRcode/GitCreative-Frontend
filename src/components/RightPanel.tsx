@@ -27,6 +27,7 @@ type Props = {
   onClear:        (id: string) => void,
   onMergeUp:      (id: string) => void,
   onMergeDown:    (id: string) => void,
+  onSelectContent: (id: string) => void,
 
   // Commit props
   branchCommits: CommitSummary[]  // for Commits tab
@@ -133,6 +134,7 @@ export function RightPanel(props: Props) {
             onClear={props.onClear}
             onMergeUp={props.onMergeUp}
             onMergeDown={props.onMergeDown}
+            onSelectContent={props.onSelectContent}
           />
         )}
 

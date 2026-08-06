@@ -1248,22 +1248,22 @@ export function Canvas() {
     pushSnapshot(gl, layersRef.current);  // makes the merge undoable/no separate logic needed
   }
 
-  function handleSelectLayerContent() {
+  function handleSelectLayerContent(layerId: string) {
     const gl = glRef.current;
-    if (!gl || !activeLayer || !selectionMaskRef.current) return;
+    const targetLayer = layersRef.current.find(l => l.id === layerId);
+    if (!gl || !targetLayer || !selectionMaskRef.current) return;
 
-    // Copy the active layer's current content directly into the selection
+    // Copy the target layer's current content directly into the selection
     // mask's own texture — the mask's alpha channel becomes "is this pixel
     // part of the selection", inherited directly from the layer's own alpha
     const canvas = canvasRef.current!;
     const pixels = new Uint8Array(canvas.width * canvas.height * 4);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, activeLayer.framebuffer);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targetLayer.framebuffer);
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     gl.bindTexture(gl.TEXTURE_2D, selectionMaskRef.current.texture);
-
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, 0,
       canvas.width, canvas.height,
@@ -1508,7 +1508,7 @@ export function Canvas() {
           boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         }}
       >
-        <button onClick={handleSelectLayerContent}>TEST: Select Layer Content</button>
+
         {/* Export dropdown */}
         <div className="toolbar-group" style={{ position: 'relative' }}>
           <button
@@ -1799,6 +1799,7 @@ export function Canvas() {
         onClear={handleClearLayer}
         onMergeUp={(id) => handleMergeLayers('up', id)}
         onMergeDown={(id) => handleMergeLayers('down', id)}
+        onSelectContent={handleSelectLayerContent}
 
         // Commit props
         viewingCommitId={viewingCommitId}
