@@ -1277,6 +1277,20 @@ export function Canvas() {
     compositeToScreen();
   }
 
+  function handleClearSelection() {
+    const gl = glRef.current;
+    if (!gl || !selectionMaskRef.current) return;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, selectionMaskRef.current.framebuffer);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    selectionActiveRef.current = false;
+    setSelectionActive(false);
+    compositeToScreen();
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     // guards agains React strict mode double-invocation in development
@@ -1808,6 +1822,32 @@ export function Canvas() {
         onCheckout={handleCheckout}
         onDeleteBranch={handleDeleteBranch}
       />
+
+      {selectionActive && (
+        <button
+          onClick={handleClearSelection}
+          className="clear-selection-btn"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 15,
+            padding: '10px 20px',
+            borderRadius: 24,
+            border: '1px solid #4a9eff',
+            background: '#eaf3ff',
+            color: '#1a6fd6',
+            fontSize: 13, fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 0 12px rgba(74, 158, 255, 0.5), 0 2px 8px rgba(0,0,0,0.15)',
+            animation: 'selectionGlow 1.8s ease-in-out infinite',
+          }}
+        >
+          <span style={{ fontSize: 15 }}>◻</span>
+          Clear Selection
+        </button>
+      )}
 
       {/* Zoom Slider */}
       <div style={{

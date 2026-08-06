@@ -76,3 +76,24 @@
 .layer-list-scroll::-webkit-scrollbar {
   display: none;
 }
+
+.clear-selection-btn {
+  bottom: max(20px, env(safe-area-inset-bottom));
+  top: auto;
+}
+
+@media (max-width: 840px) {
+  .clear-selection-btn {
+    top: max(20px, env(safe-area-inset-top));
+    bottom: auto;
+  }
+}
+
+@keyframes selectionGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(74, 158, 255, 0.5), 0 2px 8px rgba(0,0,0,0.15);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(74, 158, 255, 0.85), 0 2px 8px rgba(0,0,0,0.15);
+  }
+}
