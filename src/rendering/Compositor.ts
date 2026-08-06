@@ -331,7 +331,7 @@ export class Compositor {
   // into targetFramebuffer — used right before a finished stroke commits,
   // so drawing outside the active selection has no visible effect
   clipByMask(
-    targetTexture: WebGLTexture,
+    _targetTexture: WebGLTexture,
     targetFramebuffer: WebGLFramebuffer,
     maskTexture: WebGLTexture,
     width: number,
@@ -518,7 +518,7 @@ export class Compositor {
   // used once, at drop time, so future clipping/outline drawing reflects the
   // selection's new position without needing an offset passed in anymore
   shiftMaskInPlace(
-    maskTexture: WebGLTexture,
+    _maskTexture: WebGLTexture,
     maskFramebuffer: WebGLFramebuffer,
     offsetX: number,
     offsetY: number,

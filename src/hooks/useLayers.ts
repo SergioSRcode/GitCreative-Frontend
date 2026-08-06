@@ -175,7 +175,7 @@ export function useLayers() {
   // Merges the content of `sourceLayer` onto `targetLayer`, respecting the
   // source layer's blend mode and opacity
   function mergeLayerInto(
-    gl: WebGL2RenderingContext,
+    _gl: WebGL2RenderingContext,
     compositor: Compositor,
     sourceLayer: Layer,
     targetLayer: Layer,
@@ -191,29 +191,29 @@ export function useLayers() {
     direction: 'up' | 'down',
     layerId: string
   ) {
-    const layers = layersRef.current
-    const index  = layers.findIndex(l => l.id === layerId)
-    if (index === -1) return
+    const layers = layersRef.current;
+    const index  = layers.findIndex(l => l.id === layerId);
+    if (index === -1) return;
 
-    const targetIndex = direction === 'up' ? index + 1 : index - 1
-    if (targetIndex < 0 || targetIndex >= layers.length) return  // nothing to merge with
+    const targetIndex = direction === 'up' ? index + 1 : index - 1;
+    if (targetIndex < 0 || targetIndex >= layers.length) return;  // nothing to merge with
 
-    const source = layers[index]
-    const target = layers[targetIndex]
-    const canvas = gl.canvas as HTMLCanvasElement
+    const source = layers[index];
+    const target = layers[targetIndex];
+    const canvas = gl.canvas as HTMLCanvasElement;
 
     // Merge "up": source paints ONTO target (the layer above), source is removed
     // Merge "down": source paints ONTO target (the layer below), source is removed
-    mergeLayerInto(gl, compositor, source, target, canvas.width, canvas.height)
+    mergeLayerInto(gl, compositor, source, target, canvas.width, canvas.height);
 
-    const remaining = layers.filter(l => l.id !== source.id)
-    layersRef.current = remaining
+    const remaining = layers.filter(l => l.id !== source.id);
+    layersRef.current = remaining;
 
     if (activeLayerId === source.id) {
-      setActiveLayerId(target.id)
+      setActiveLayerId(target.id);
     }
 
-    syncDisplay()
+    syncDisplay();
   }
 
   return {
