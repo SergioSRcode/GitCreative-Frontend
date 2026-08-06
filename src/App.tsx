@@ -35,6 +35,7 @@ ProtectedRoute checks for the auth token and redirects to /auth if missing.
 export default function App() {
   return (
     <>
+      {/* the webkit and color !important steps ensure that default ios styling for buttons is overwritten properly */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.96); }
@@ -42,7 +43,9 @@ export default function App() {
         }
 
         button { 
-          cursor: pointer 
+          cursor: pointer;
+          -webkit-tap-highlight-color: transparent;
+          color: inherit !important;
         }
 
         /* Comfortable touch targets on touch-capable devices */
