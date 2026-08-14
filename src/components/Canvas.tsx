@@ -535,9 +535,7 @@ export function Canvas() {
       const gl     = glRef.current!;
       const canvas = canvasRef.current!;
       const point  = getPoint(e);
-      // const sampled = sampleColorFromLayer(
-      //   gl, layersRef.current[0], point.x, point.y, canvas.height
-      // );
+
       compositeToScreen();
 
       // Samples from the final composited screen output, not any single layer
@@ -551,8 +549,6 @@ export function Canvas() {
         gl.RGBA, gl.UNSIGNED_BYTE,
         pixel
       );
-
-      console.log('Eyedropper raw pixel:', pixel);
 
       const sampled = {
         r: pixel[0] / 255,
