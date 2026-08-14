@@ -6,7 +6,7 @@ import { hsvToRgb, rgbToHsv, rgbToHex } from '../utils/color';
 import { resample, smooth } from '../utils/stroke';
 import { BrushRenderer } from '../rendering/BrushRenderer';
 import { Compositor } from '../rendering/Compositor';
-import { sampleColorFromLayer } from '../utils/eyedropper';
+// import { sampleColorFromLayer } from '../utils/eyedropper';
 import { exportCanvas, flipVertically } from '../utils/export';
 import type { ExportFormat } from '../utils/export';
 import { useLayers } from '../hooks/useLayers';
@@ -535,9 +535,27 @@ export function Canvas() {
       const gl     = glRef.current!;
       const canvas = canvasRef.current!;
       const point  = getPoint(e);
-      const sampled = sampleColorFromLayer(
-        gl, layersRef.current[0], point.x, point.y, canvas.height
+      // const sampled = sampleColorFromLayer(
+      //   gl, layersRef.current[0], point.x, point.y, canvas.height
+      // );
+
+      // Samples from the final composited screen output, not any single layer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const pixel = new Uint8Array(4);
+
+      gl.readPixels(
+        Math.floor(point.x),
+        Math.floor(canvas.height - point.y),
+        1, 1,
+        gl.RGBA, gl.UNSIGNED_BYTE,
+        pixel
       );
+
+      const sampled = {
+        r: pixel[0] / 255,
+        g: pixel[1] / 255,
+        b: pixel[2] / 255,
+      };
 
       setHsvColor(rgbToHsv(sampled));
       setEyedropper(false);
