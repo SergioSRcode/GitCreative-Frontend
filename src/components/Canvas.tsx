@@ -67,6 +67,7 @@ export function Canvas() {
   const selectionSourceLayerIdRef = useRef<string | null>(null);
   const liftedContentRef = useRef<{ texture: WebGLTexture; offsetX: number; offsetY: number } | null>(null);
   const moveDragStartRef = useRef({ x: 0, y: 0 });
+  const previewSaveRef = useRef<Promise<void> | null>(null);
 
   const { projectId: urlProjectId, branchId: urlBranchId } = useParams();
   const navigate = useNavigate();
@@ -1254,6 +1255,13 @@ export function Canvas() {
     previewingRef.current = true;
 
     try {
+      // First preview of a hover session: persist the live canvas so the
+      // preview-end reload (which loads the quick-save) restores it
+      if (!isDetached && !previewSaveRef.current) {
+        previewSaveRef.current = handleQuickSave();
+      }
+      await previewSaveRef.current;
+
       const buffer = await fetchSnapshot(projectId, commit.id);
       const doc    = await deserialiseDocumentCompressed(buffer);
       const gl     = glRef.current!;
@@ -1275,6 +1283,7 @@ export function Canvas() {
   }
 
   async function handleTimelinePreviewEnd() {
+    await previewSaveRef.current;   // make sure the save finished before reloading from the server
     // Revert canvas back to whatever is actually being viewed/committed
     if (!projectId || !viewingCommitId || !activeBranchId) return;
 
@@ -1299,6 +1308,7 @@ export function Canvas() {
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       compositeToScreen();
+      previewSaveRef.current = null;
     } catch (err) {
       console.error('Failed to revert preview:', err);
     }
