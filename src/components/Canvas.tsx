@@ -1308,9 +1308,10 @@ export function Canvas() {
 
       loadLayers(gl, doc.metadata, doc.layerPixels);
       compositeToScreen();
-      previewSaveRef.current = null;
     } catch (err) {
       console.error('Failed to revert preview:', err);
+    } finally {
+      previewSaveRef.current = null;
     }
   }
 
