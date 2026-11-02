@@ -1284,10 +1284,11 @@ export function Canvas() {
 
   async function handleTimelinePreviewEnd() {
     await previewSaveRef.current;   // make sure the save finished before reloading from the server
-    // Revert canvas back to whatever is actually being viewed/committed
-    if (!projectId || !viewingCommitId || !activeBranchId) return;
 
     try {
+      // Revert canvas back to whatever is actually being viewed/committed
+      if (!projectId || !viewingCommitId || !activeBranchId) return;
+      
       const isHeadCommit = viewingCommitId === headCommitId;
       const buffer = isHeadCommit
         ? await fetchCurrentState(projectId, activeBranchId)
